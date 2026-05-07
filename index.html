@@ -75,6 +75,12 @@
     margin-bottom: 24px;
   }
   @media (max-width: 860px) { .main-grid { grid-template-columns: 1fr; } }
+  .chart-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
+    margin-bottom: 24px;
+  }
 
   /* Charts */
   .panel {
@@ -390,7 +396,7 @@
   <div class="note" id="chart-mode-note">目前圖表包含所有持倉。</div>
 </div>
 
-<div class="main-grid">
+<div class="chart-grid">
   <div class="panel">
     <div class="panel-title" id="pie1-title">資產類別佔比</div>
     <div class="chart-wrap"><canvas id="pie1"></canvas></div>
@@ -398,6 +404,10 @@
   <div class="panel">
     <div class="panel-title" id="pie2-title">台股 / 美股明細</div>
     <div class="chart-wrap"><canvas id="pie2"></canvas></div>
+  </div>
+  <div class="panel">
+    <div class="panel-title" id="pie3-title">ETF / 個股比例</div>
+    <div class="chart-wrap"><canvas id="pie3"></canvas></div>
   </div>
 </div>
 
@@ -511,7 +521,7 @@ let snapshots = JSON.parse(localStorage.getItem('portfolio_snapshots') || '[]');
 let editIndex = -1;
 let sortKey = 'value_twd';
 let sortAsc = false;
-let pie1Chart, pie2Chart, historyChart;
+let pie1Chart, pie2Chart, pie3Chart, historyChart;
 let historyRangeDays = 30;
 let chartViewMode = 'all';
 
@@ -1008,6 +1018,40 @@ function buildCategoryData(list) {
   return cats;
 }
 
+function buildEtfStockData(list) {
+  const groups = {ETF:0, 個股:0};
+  list.forEach(h => {
+    const v = valueInTWD(h);
+    if(h.market==='ETF-TW' || h.market==='ETF-US') groups['ETF'] += v;
+    else if(h.market==='TW' || h.market==='US') groups['個股'] += v;
+    else groups['其他'] = (groups['其他'] || 0) + v;
+  });
+  return groups;
+}
+
+function buildHoldingDetailPieData(list, total, otherThreshold=0.10) {
+  const sorted = [...list].sort((a,b)=>valueInTWD(b)-valueInTWD(a));
+  if(sorted.length === 0 || total <= 0) return {labels:['無資料'], data:[1]};
+
+  let included = [];
+  let remaining = sorted.reduce((s,h)=>s+valueInTWD(h),0);
+
+  for(const h of sorted) {
+    if(remaining / total <= otherThreshold && included.length > 0) break;
+    included.push(h);
+    remaining -= valueInTWD(h);
+  }
+
+  const labels = included.map(h=>h.name||h.ticker);
+  const data = included.map(h=>valueInTWD(h));
+  if(remaining > 0) {
+    const remainingPct = total > 0 ? remaining / total : 0;
+    labels.push(remainingPct <= otherThreshold ? '其他（<10%）' : '其他');
+    data.push(remaining);
+  }
+  return {labels, data};
+}
+
 function makeDoughnutChart(canvasId, chartRef, labels, data, total, legendFont=12) {
   const canvas = document.getElementById(canvasId);
   if(chartRef) chartRef.destroy();
@@ -1046,8 +1090,9 @@ function updateCharts() {
 
   document.getElementById('pie1-title').textContent = isExTSMC ? '資產類別佔比（排除台積電）' : '資產類別佔比';
   document.getElementById('pie2-title').textContent = isExTSMC ? '台股 / 美股明細（排除台積電）' : '台股 / 美股明細';
+  document.getElementById('pie3-title').textContent = isExTSMC ? 'ETF / 個股比例（排除台積電）' : 'ETF / 個股比例';
   document.getElementById('chart-mode-note').textContent = isExTSMC
-    ? '目前圖表已排除台積電持倉（辨識 2330.TW / TSM / 名稱含台積電或 TSMC），方便觀察其他持倉分布。'
+    ? '目前圖表已排除台積電持倉（辨識 2330.TW / TSM / 名稱含台積電或 TSMC），並同步重算資產類別、持倉明細與 ETF / 個股比例。'
     : '目前圖表包含所有持倉。';
 
   // Pie 1: by market category
@@ -1055,14 +1100,14 @@ function updateCharts() {
   const catKeys = Object.keys(cats).filter(k=>cats[k]>0);
   pie1Chart = makeDoughnutChart('pie1', pie1Chart, catKeys.length ? catKeys : ['無資料'], catKeys.length ? catKeys.map(k=>cats[k]) : [1], chartTotal, 12);
 
-  // Pie 2: top individual holdings
-  const sorted = [...chartHoldings].sort((a,b)=>valueInTWD(b)-valueInTWD(a));
-  const top8 = sorted.slice(0,8);
-  const others = sorted.slice(8).reduce((s,h)=>s+valueInTWD(h),0);
-  const pie2Labels = top8.map(h=>h.name||h.ticker);
-  const pie2Data = top8.map(h=>valueInTWD(h));
-  if(others>0){ pie2Labels.push('其他'); pie2Data.push(others); }
-  pie2Chart = makeDoughnutChart('pie2', pie2Chart, pie2Labels.length ? pie2Labels : ['無資料'], pie2Data.length ? pie2Data : [1], chartTotal, 11);
+  // Pie 2: individual holdings; list enough items so that "其他" is below 10% when possible
+  const detailPie = buildHoldingDetailPieData(chartHoldings, chartTotal, 0.10);
+  pie2Chart = makeDoughnutChart('pie2', pie2Chart, detailPie.labels, detailPie.data, chartTotal, 11);
+
+  // Pie 3: ETF vs individual stocks
+  const etfStock = buildEtfStockData(chartHoldings);
+  const etfStockKeys = Object.keys(etfStock).filter(k=>etfStock[k]>0);
+  pie3Chart = makeDoughnutChart('pie3', pie3Chart, etfStockKeys.length ? etfStockKeys : ['無資料'], etfStockKeys.length ? etfStockKeys.map(k=>etfStock[k]) : [1], chartTotal, 12);
 }
 
 // ── Table ────────────────────────────────────────────────────────────
