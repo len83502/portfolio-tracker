@@ -329,14 +329,16 @@
   <div class="sync-row">
     <span class="sync-title">☁️ Google Sheets 同步</span>
     <input class="sync-input" id="cloud-api-url" placeholder="貼上 Google Apps Script Web App URL，例：https://script.google.com/macros/s/.../exec">
+    <input class="sync-input" id="cloud-token" type="password" style="max-width:220px" placeholder="同步安全碼 Token">
     <button class="btn-primary btn-sm" onclick="connectCloud()">連線</button>
     <button class="btn-ghost btn-sm" onclick="loadCloudData(true)">從雲端下載</button>
     <button class="btn-ghost btn-sm" onclick="saveCloudData(true)">上傳到雲端</button>
+    <button class="btn-ghost btn-sm" onclick="clearCloudToken()">清除安全碼</button>
     <button class="btn-danger btn-sm" onclick="disconnectCloud()">關閉同步</button>
     <span class="sync-status" id="sync-status">目前：本機模式</span>
   </div>
   <div class="sync-help">
-    第一次使用：先建立 Google Sheet + Apps Script，發布為 Web App 後，把 Web App URL 貼在這裡。連線後，本網頁會以 Google Sheets 作為雲端資料庫；本機仍會保留備份。
+    第一次使用：先貼上 Web App URL 與同步安全碼 Token。Token 只會儲存在目前瀏覽器，不會寫進 GitHub HTML；每台新裝置第一次使用時需輸入一次。
   </div>
 </div>
 
@@ -514,6 +516,7 @@ let historyRangeDays = 30;
 let chartViewMode = 'all';
 
 let cloudApiUrl = localStorage.getItem('portfolio_cloud_api_url') || '';
+let cloudToken = localStorage.getItem('portfolio_cloud_token') || '';
 let cloudEnabled = localStorage.getItem('portfolio_cloud_enabled') === '1';
 let cloudSaveTimer = null;
 let isLoadingCloud = false;
@@ -600,20 +603,57 @@ function normalizeCloudUrl(url) {
 
 function initCloudPanel() {
   const input = document.getElementById('cloud-api-url');
+  const tokenInput = document.getElementById('cloud-token');
   if(input) input.value = cloudApiUrl;
-  if(cloudEnabled && cloudApiUrl) setSyncStatus('目前：Google Sheets 同步模式', 'ok');
+  if(tokenInput) tokenInput.value = cloudToken;
+  if(cloudEnabled && cloudApiUrl && cloudToken) setSyncStatus('目前：Google Sheets 同步模式（Token 已啟用）', 'ok');
+  else if(cloudEnabled && cloudApiUrl) setSyncStatus('目前：已設定網址，但尚未輸入 Token', 'warn');
   else setSyncStatus('目前：本機模式', 'warn');
+}
+
+function getCloudTokenFromInput() {
+  const el = document.getElementById('cloud-token');
+  return (el ? el.value : cloudToken || '').trim();
+}
+
+function requireCloudToken(manual=false) {
+  cloudToken = getCloudTokenFromInput();
+  if(!cloudToken) {
+    if(manual) alert('請先輸入同步安全碼 Token');
+    setSyncStatus('尚未輸入同步安全碼 Token', 'err');
+    return false;
+  }
+  localStorage.setItem('portfolio_cloud_token', cloudToken);
+  return true;
+}
+
+function cloudUrlWithParams(action, params={}) {
+  const u = new URL(cloudApiUrl);
+  u.searchParams.set('action', action);
+  u.searchParams.set('token', cloudToken);
+  Object.entries(params).forEach(([k,v]) => u.searchParams.set(k, v));
+  return u.toString();
 }
 
 function connectCloud() {
   const url = normalizeCloudUrl(document.getElementById('cloud-api-url').value);
   if(!url) { alert('請先貼上 Google Apps Script Web App URL'); return; }
+  if(!requireCloudToken(true)) return;
   cloudApiUrl = url;
   cloudEnabled = true;
   localStorage.setItem('portfolio_cloud_api_url', cloudApiUrl);
   localStorage.setItem('portfolio_cloud_enabled', '1');
-  setSyncStatus('連線中，正在從雲端讀取...', 'warn');
+  setSyncStatus('連線中，正在驗證 Token 並從雲端讀取...', 'warn');
   loadCloudData(true);
+}
+
+function clearCloudToken() {
+  if(!confirm('確定清除本瀏覽器記住的同步安全碼嗎？')) return;
+  cloudToken = '';
+  localStorage.removeItem('portfolio_cloud_token');
+  const tokenInput = document.getElementById('cloud-token');
+  if(tokenInput) tokenInput.value = '';
+  setSyncStatus('已清除本機 Token，請重新輸入後再連線', 'warn');
 }
 
 function disconnectCloud() {
@@ -646,10 +686,11 @@ function jsonpRequest(url, timeoutMs=15000) {
 
 async function loadCloudData(manual=false) {
   if(!cloudApiUrl) { if(manual) alert('請先貼上 Google Apps Script Web App URL'); return; }
+  if(!requireCloudToken(manual)) return;
   try {
     isLoadingCloud = true;
     setSyncStatus('正在從 Google Sheets 讀取...', 'warn');
-    const data = await jsonpRequest(cloudApiUrl + '?action=get');
+    const data = await jsonpRequest(cloudUrlWithParams('get'));
     if(!data || data.ok !== true) throw new Error(data?.error || '雲端回傳格式不正確');
     const cloudHoldings = Array.isArray(data.holdings) ? data.holdings.map(h => ({
       ticker: String(h.ticker || '').trim(),
@@ -711,6 +752,11 @@ function postViaHiddenForm(url, payload) {
     action.value = 'saveAll';
     form.appendChild(action);
 
+    const tokenInput = document.createElement('input');
+    tokenInput.name = 'token';
+    tokenInput.value = cloudToken;
+    form.appendChild(tokenInput);
+
     const input = document.createElement('input');
     input.name = 'payload';
     input.value = JSON.stringify(payload);
@@ -735,7 +781,11 @@ function postViaHiddenForm(url, payload) {
 
 async function saveCloudData(manual=false) {
   if(!cloudEnabled || !cloudApiUrl) { if(manual) alert('尚未啟用 Google Sheets 同步'); return; }
+  if(!requireCloudToken(manual)) return;
   try {
+    setSyncStatus('正在驗證 Token...', 'warn');
+    const auth = await jsonpRequest(cloudUrlWithParams('ping'), 8000);
+    if(!auth || auth.ok !== true) throw new Error(auth?.error || 'Token 驗證失敗');
     setSyncStatus('正在上傳到 Google Sheets...', 'warn');
     const payload = { holdings, snapshots, usdRate, updatedAt: new Date().toISOString() };
     await postViaHiddenForm(cloudApiUrl, payload);
@@ -1284,7 +1334,7 @@ async function fetchPricesFromCloud(tickers) {
   const clean = [...new Set(tickers.map(t => String(t || '').trim().toUpperCase()).filter(Boolean))];
   if(clean.length === 0) return {};
   try {
-    const url = cloudApiUrl + '?action=prices&tickers=' + encodeURIComponent(clean.join(','));
+    const url = cloudUrlWithParams('prices', {tickers: clean.join(',')});
     const data = await jsonpRequest(url, 25000);
     if(data && data.ok === true && data.prices) return data.prices;
     console.warn('雲端價格回傳異常', data);
