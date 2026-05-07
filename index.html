@@ -377,13 +377,24 @@
 </div>
 
 <!-- Charts -->
+<div class="panel" style="margin-bottom:20px">
+  <div class="panel-title" style="margin-bottom:10px">
+    <span>圖表顯示模式</span>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <button class="history-range-btn active" id="chart-all-btn" onclick="setChartView('all', this)">顯示全部</button>
+      <button class="history-range-btn" id="chart-ex-tsmc-btn" onclick="setChartView('exclude_tsmc', this)">排除台積電</button>
+    </div>
+  </div>
+  <div class="note" id="chart-mode-note">目前圖表包含所有持倉。</div>
+</div>
+
 <div class="main-grid">
   <div class="panel">
-    <div class="panel-title">資產類別佔比</div>
+    <div class="panel-title" id="pie1-title">資產類別佔比</div>
     <div class="chart-wrap"><canvas id="pie1"></canvas></div>
   </div>
   <div class="panel">
-    <div class="panel-title">台股 / 美股明細</div>
+    <div class="panel-title" id="pie2-title">台股 / 美股明細</div>
     <div class="chart-wrap"><canvas id="pie2"></canvas></div>
   </div>
 </div>
@@ -472,7 +483,7 @@
     <thead>
       <tr>
         <th onclick="sortBy('name')">名稱 <span id="sort-name"></span></th>
-        <th>市場</th>
+        <th onclick="sortBy('market')">市場</th>
         <th class="num" onclick="sortBy('shares')">股數</th>
         <th class="num" onclick="sortBy('price')">現價</th>
         <th class="num" onclick="sortBy('cost')">成本</th>
@@ -500,6 +511,7 @@ let sortKey = 'value_twd';
 let sortAsc = false;
 let pie1Chart, pie2Chart, historyChart;
 let historyRangeDays = 30;
+let chartViewMode = 'all';
 
 let cloudApiUrl = localStorage.getItem('portfolio_cloud_api_url') || '';
 let cloudEnabled = localStorage.getItem('portfolio_cloud_enabled') === '1';
@@ -917,60 +929,44 @@ function updateSummary() {
 // ── Charts ───────────────────────────────────────────────────────────
 const COLORS = ['#7c6dfa','#3dcfb0','#f9a84b','#f06070','#4ea8e8','#a78bfa','#60c0f0','#f0a060','#80d080'];
 
-function updateCharts() {
-  const total = totalValueTWD();
+function isTSMCHolding(h) {
+  const ticker = (h.ticker || '').toUpperCase().trim();
+  const name = (h.name || '').toUpperCase().trim();
+  return ticker === '2330.TW' || ticker === 'TSM' || name.includes('台積電') || name.includes('TSMC');
+}
 
-  // Pie 1: by market category
+function setChartView(mode, btn) {
+  chartViewMode = mode;
+  document.querySelectorAll('#chart-all-btn, #chart-ex-tsmc-btn').forEach(b => b.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+  updateCharts();
+}
+
+function getChartHoldings() {
+  return chartViewMode === 'exclude_tsmc' ? holdings.filter(h => !isTSMCHolding(h)) : holdings;
+}
+
+function buildCategoryData(list) {
   const cats = {台股:0,'台灣ETF':0,美股:0,'美國ETF':0};
-  holdings.forEach(h => {
+  list.forEach(h => {
     const v = valueInTWD(h);
-    if(h.market==='TW') cats['台股']+=v;
-    else if(h.market==='ETF-TW') cats['台灣ETF']+=v;
-    else if(h.market==='US') cats['美股']+=v;
-    else cats['美國ETF']+=v;
+    if(h.market==='TW') cats['台股'] += v;
+    else if(h.market==='ETF-TW') cats['台灣ETF'] += v;
+    else if(h.market==='US') cats['美股'] += v;
+    else if(h.market==='ETF-US') cats['美國ETF'] += v;
   });
+  return cats;
+}
 
-  const catKeys = Object.keys(cats).filter(k=>cats[k]>0);
-  if(pie1Chart) pie1Chart.destroy();
-  pie1Chart = new Chart(document.getElementById('pie1'), {
+function makeDoughnutChart(canvasId, chartRef, labels, data, total, legendFont=12) {
+  const canvas = document.getElementById(canvasId);
+  if(chartRef) chartRef.destroy();
+  return new Chart(canvas, {
     type: 'doughnut',
     data: {
-      labels: catKeys,
+      labels,
       datasets: [{
-        data: catKeys.map(k=>cats[k]),
-        backgroundColor: ['#4ea8e8','#a78bfa','#f9a84b','#7c6dfa'],
-        borderColor: '#17171b',
-        borderWidth: 2,
-        hoverBorderWidth: 3
-      }]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: {
-        legend: { position:'right', labels:{ color:'#e8e8f0', font:{size:12}, boxWidth:12, padding:10 }},
-        tooltip: { callbacks: { label: ctx => {
-          const pct = ((ctx.parsed/total)*100).toFixed(1);
-          return ` ${fmtTWD(ctx.parsed)} (${pct}%)`;
-        }}}
-      }
-    }
-  });
-
-  // Pie 2: top individual holdings
-  const sorted = [...holdings].sort((a,b)=>valueInTWD(b)-valueInTWD(a));
-  const top8 = sorted.slice(0,8);
-  const others = sorted.slice(8).reduce((s,h)=>s+valueInTWD(h),0);
-  const pie2Labels = top8.map(h=>h.name||h.ticker);
-  const pie2Data = top8.map(h=>valueInTWD(h));
-  if(others>0){ pie2Labels.push('其他'); pie2Data.push(others); }
-
-  if(pie2Chart) pie2Chart.destroy();
-  pie2Chart = new Chart(document.getElementById('pie2'), {
-    type: 'doughnut',
-    data: {
-      labels: pie2Labels,
-      datasets: [{
-        data: pie2Data,
+        data,
         backgroundColor: COLORS,
         borderColor: '#17171b',
         borderWidth: 2,
@@ -980,14 +976,43 @@ function updateCharts() {
     options: {
       responsive: true, maintainAspectRatio: false,
       plugins: {
-        legend: { position:'right', labels:{ color:'#e8e8f0', font:{size:11}, boxWidth:12, padding:8 }},
+        legend: {
+          position:'right',
+          labels:{ color:'#e8e8f0', font:{size:legendFont}, boxWidth:12, padding:legendFont <= 11 ? 8 : 10 }
+        },
         tooltip: { callbacks: { label: ctx => {
-          const pct = ((ctx.parsed/total)*100).toFixed(1);
+          const pct = total > 0 ? ((ctx.parsed/total)*100).toFixed(1) : '0.0';
           return ` ${fmtTWD(ctx.parsed)} (${pct}%)`;
         }}}
       }
     }
   });
+}
+
+function updateCharts() {
+  const chartHoldings = getChartHoldings();
+  const chartTotal = chartHoldings.reduce((s,h)=>s+valueInTWD(h),0);
+  const isExTSMC = chartViewMode === 'exclude_tsmc';
+
+  document.getElementById('pie1-title').textContent = isExTSMC ? '資產類別佔比（排除台積電）' : '資產類別佔比';
+  document.getElementById('pie2-title').textContent = isExTSMC ? '台股 / 美股明細（排除台積電）' : '台股 / 美股明細';
+  document.getElementById('chart-mode-note').textContent = isExTSMC
+    ? '目前圖表已排除台積電持倉（辨識 2330.TW / TSM / 名稱含台積電或 TSMC），方便觀察其他持倉分布。'
+    : '目前圖表包含所有持倉。';
+
+  // Pie 1: by market category
+  const cats = buildCategoryData(chartHoldings);
+  const catKeys = Object.keys(cats).filter(k=>cats[k]>0);
+  pie1Chart = makeDoughnutChart('pie1', pie1Chart, catKeys.length ? catKeys : ['無資料'], catKeys.length ? catKeys.map(k=>cats[k]) : [1], chartTotal, 12);
+
+  // Pie 2: top individual holdings
+  const sorted = [...chartHoldings].sort((a,b)=>valueInTWD(b)-valueInTWD(a));
+  const top8 = sorted.slice(0,8);
+  const others = sorted.slice(8).reduce((s,h)=>s+valueInTWD(h),0);
+  const pie2Labels = top8.map(h=>h.name||h.ticker);
+  const pie2Data = top8.map(h=>valueInTWD(h));
+  if(others>0){ pie2Labels.push('其他'); pie2Data.push(others); }
+  pie2Chart = makeDoughnutChart('pie2', pie2Chart, pie2Labels.length ? pie2Labels : ['無資料'], pie2Data.length ? pie2Data : [1], chartTotal, 11);
 }
 
 // ── Table ────────────────────────────────────────────────────────────
@@ -1000,7 +1025,13 @@ function sortBy(key) {
 function renderTable() {
   const total = totalValueTWD();
   const q = document.getElementById('search-box').value.toLowerCase();
-  let rows = holdings.map((h,i)=>({...h, idx:i, value_twd:valueInTWD(h), cost_twd:costInTWD(h)}));
+  let rows = holdings.map((h,i)=>{
+    const value_twd = valueInTWD(h);
+    const cost_twd = costInTWD(h);
+    const pnl_pct = h.price > 0 && h.cost > 0 ? ((h.price-h.cost)/h.cost)*100 : 0;
+    const weight = total > 0 ? (value_twd/total)*100 : 0;
+    return {...h, idx:i, value_twd, cost_twd, pnl_pct, weight};
+  });
 
   if(q) rows = rows.filter(r=>(r.name||'').toLowerCase().includes(q) || r.ticker.toLowerCase().includes(q));
 
@@ -1013,7 +1044,7 @@ function renderTable() {
   const tbody = document.getElementById('holdings-tbody');
   tbody.innerHTML = rows.map(h => {
     const pnl = h.price > 0 && h.cost > 0 ? ((h.price-h.cost)/h.cost)*100 : 0;
-    const wt = total > 0 ? (h.value_twd/total)*100 : 0;
+    const wt = h.weight;
     const barW = Math.min(wt*3, 80);
     const currency = (h.market==='US'||h.market==='ETF-US') ? 'US$' : 'NT$';
     return `<tr>
