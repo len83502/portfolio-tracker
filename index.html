@@ -368,6 +368,11 @@
     <div class="card-sub" id="total-usd-equiv">≈ — USD</div>
   </div>
   <div class="card">
+    <div class="card-label">現金 / 銀行</div>
+    <div class="card-value" id="cash-total">—</div>
+    <div class="card-sub" id="cash-pct">占比 —</div>
+  </div>
+  <div class="card">
     <div class="card-label">台股部位</div>
     <div class="card-value" id="tw-total">—</div>
     <div class="card-sub" id="tw-pct">占比 —</div>
@@ -485,6 +490,62 @@
   <div class="note">※ 台股上市代號加 .TW（如 2330.TW），上櫃加 .TWO（如 6488.TWO）；美股直接輸入代號（如 AAPL、VOO）。啟用 Google Sheets 同步後，台股/美股價格優先由 Google Apps Script 後端抓取，可降低瀏覽器 CORS 或代理服務失效造成的抓價問題。</div>
 </div>
 
+<!-- Cash / Bank accounts -->
+<div class="holdings-panel" id="cash-panel">
+  <div class="holdings-header">
+    <div>
+      <div class="panel-title" style="margin:0">現金 / 銀行帳戶</div>
+      <div class="note">現金會納入總資產計算；TWD 直接計入，USD 依上方 USD/TWD 匯率折算台幣。</div>
+    </div>
+    <button class="btn-primary" onclick="showCashForm()">＋ 新增現金帳戶</button>
+  </div>
+
+  <div class="edit-panel" id="cash-edit-panel">
+    <div class="panel-title" id="cash-form-title">新增現金帳戶</div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>帳戶名稱</label>
+        <input id="c-name" placeholder="例：台幣銀行、美元券商現金">
+      </div>
+      <div class="form-group">
+        <label>幣別</label>
+        <select id="c-currency">
+          <option value="TWD">TWD 台幣</option>
+          <option value="USD">USD 美元</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>金額</label>
+        <input id="c-balance" type="number" placeholder="0" step="0.01">
+      </div>
+      <div class="form-group">
+        <label>備註（可選）</label>
+        <input id="c-note" placeholder="例：銀行活存、券商交割戶">
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn-primary" onclick="saveCashAccount()">儲存</button>
+      <button class="btn-ghost" onclick="hideCashForm()">取消</button>
+      <button class="btn-danger btn-sm" id="cash-delete-btn" style="display:none" onclick="deleteCashAccount()">刪除</button>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>帳戶名稱</th>
+        <th>幣別</th>
+        <th class="num">金額</th>
+        <th class="num">折台幣金額</th>
+        <th class="num">總資產佔比</th>
+        <th>備註</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody id="cash-tbody"></tbody>
+  </table>
+</div>
+
 <!-- Holdings table -->
 <div class="holdings-panel">
   <div class="holdings-header">
@@ -518,7 +579,9 @@
 let holdings = JSON.parse(localStorage.getItem('portfolio_holdings') || '[]');
 let usdRate = parseFloat(localStorage.getItem('portfolio_usd_rate') || '31.46');
 let snapshots = JSON.parse(localStorage.getItem('portfolio_snapshots') || '[]');
+let cashAccounts = JSON.parse(localStorage.getItem('portfolio_cash_accounts') || '[]');
 let editIndex = -1;
+let editCashIndex = -1;
 let sortKey = 'value_twd';
 let sortAsc = false;
 let pie1Chart, pie2Chart, pie3Chart, historyChart;
@@ -581,13 +644,21 @@ function costInTWD(h) {
   const v = h.shares * h.cost;
   return (h.market==='US'||h.market==='ETF-US') ? v * usdRate : v;
 }
-function totalValueTWD() { return holdings.reduce((s,h)=>s+valueInTWD(h),0); }
-function totalCostTWD() { return holdings.reduce((s,h)=>s+costInTWD(h),0); }
+function cashValueInTWD(c) {
+  const amount = parseFloat(c.balance) || 0;
+  return (String(c.currency || 'TWD').toUpperCase() === 'USD') ? amount * usdRate : amount;
+}
+function holdingsValueTWD() { return holdings.reduce((s,h)=>s+valueInTWD(h),0); }
+function holdingsCostTWD() { return holdings.reduce((s,h)=>s+costInTWD(h),0); }
+function totalCashTWD() { return cashAccounts.reduce((s,c)=>s+cashValueInTWD(c),0); }
+function totalValueTWD() { return holdingsValueTWD() + totalCashTWD(); }
+function totalCostTWD() { return holdingsCostTWD(); }
 
 function resetToLatest() {
   if(!confirm('這會清除目前所有持倉並載入截圖中的最新資料，確定嗎？')) return;
   localStorage.removeItem('portfolio_holdings');
   localStorage.removeItem('portfolio_snapshots');
+  localStorage.removeItem('portfolio_cash_accounts');
   location.reload();
 }
 
@@ -595,6 +666,7 @@ function saveAll(options={}) {
   localStorage.setItem('portfolio_holdings', JSON.stringify(holdings));
   localStorage.setItem('portfolio_usd_rate', usdRate);
   localStorage.setItem('portfolio_snapshots', JSON.stringify(snapshots));
+  localStorage.setItem('portfolio_cash_accounts', JSON.stringify(cashAccounts));
   if(cloudEnabled && !options.skipCloud && !isLoadingCloud) scheduleCloudSave();
 }
 
@@ -718,6 +790,12 @@ async function loadCloudData(manual=false) {
       return;
     }
     holdings = cloudHoldings;
+    if(Array.isArray(data.cashAccounts)) cashAccounts = data.cashAccounts.map(c => ({
+      name: String(c.name || '').trim(),
+      currency: String(c.currency || 'TWD').trim().toUpperCase(),
+      balance: parseFloat(c.balance) || 0,
+      note: String(c.note || '').trim()
+    })).filter(c => c.name);
     if(Array.isArray(data.snapshots)) snapshots = data.snapshots.map(s => ({
       date: String(s.date || '').slice(0,10),
       total: Math.round(parseFloat(s.total) || 0),
@@ -797,7 +875,7 @@ async function saveCloudData(manual=false) {
     const auth = await jsonpRequest(cloudUrlWithParams('ping'), 8000);
     if(!auth || auth.ok !== true) throw new Error(auth?.error || 'Token 驗證失敗');
     setSyncStatus('正在上傳到 Google Sheets...', 'warn');
-    const payload = { holdings, snapshots, usdRate, updatedAt: new Date().toISOString() };
+    const payload = { holdings, cashAccounts, snapshots, usdRate, updatedAt: new Date().toISOString() };
     await postViaHiddenForm(cloudApiUrl, payload);
     setSyncStatus('Google Sheets 已儲存：' + new Date().toLocaleTimeString('zh-TW'), 'ok');
     if(manual) alert('已送出到 Google Sheets。若要確認內容，請打開 Google Sheet 查看。');
@@ -815,7 +893,8 @@ function snapshotNow(manual=false) {
   if(holdings.length === 0) return;
   const dateKey = todayStr();
   const total = totalValueTWD();
-  const tw = holdings.filter(h=>h.market==='TW'||h.market==='ETF-TW').reduce((s,h)=>s+valueInTWD(h),0);
+  const tw = holdings.filter(h=>h.market==='TW'||h.market==='ETF-TW').reduce((s,h)=>s+valueInTWD(h),0)
+    + cashAccounts.filter(c=>String(c.currency||'TWD').toUpperCase()==='TWD').reduce((s,c)=>s+cashValueInTWD(c),0);
   const us = total - tw;
   const existing = snapshots.findIndex(s=>s.date===dateKey);
   const snap = { date: dateKey, total: Math.round(total), tw: Math.round(tw), us: Math.round(us), usdRate };
@@ -966,18 +1045,22 @@ document.getElementById('hdr-rate').textContent = usdRate;
 // ── Summary ──────────────────────────────────────────────────────────
 function updateSummary() {
   const total = totalValueTWD();
-  const totalCost = totalCostTWD();
+  const cash = totalCashTWD();
+  const holdingsTotal = holdingsValueTWD();
+  const totalCost = holdingsCostTWD();
   const tw = holdings.filter(h=>h.market==='TW'||h.market==='ETF-TW').reduce((s,h)=>s+valueInTWD(h),0);
   const us = holdings.filter(h=>h.market==='US'||h.market==='ETF-US').reduce((s,h)=>s+valueInTWD(h),0);
-  const pnl = total - totalCost;
+  const pnl = holdingsTotal - totalCost;
   const pnlPct = totalCost > 0 ? (pnl/totalCost)*100 : 0;
 
   document.getElementById('total-twd').textContent = fmtTWD(total);
   document.getElementById('total-usd-equiv').textContent = '≈ US$' + Math.round(total/usdRate).toLocaleString();
+  document.getElementById('cash-total').textContent = fmtTWD(cash);
+  document.getElementById('cash-pct').textContent = '佔比 ' + (total > 0 ? fmtNum(cash/total*100) : '0.00') + '%';
   document.getElementById('tw-total').textContent = fmtTWD(tw);
-  document.getElementById('tw-pct').textContent = '佔比 ' + fmtNum(tw/total*100)+'%';
+  document.getElementById('tw-pct').textContent = '佔比 ' + (total > 0 ? fmtNum(tw/total*100) : '0.00')+'%';
   document.getElementById('us-total').textContent = fmtTWD(us);
-  document.getElementById('us-pct').textContent = '佔比 ' + fmtNum(us/total*100)+'%';
+  document.getElementById('us-pct').textContent = '佔比 ' + (total > 0 ? fmtNum(us/total*100) : '0.00')+'%';
 
   const pnlEl = document.getElementById('unrealized-pnl');
   pnlEl.textContent = (pnl>=0?'+':'')+fmtTWD(pnl);
@@ -1005,9 +1088,10 @@ function setChartView(mode, btn) {
 function getChartHoldings() {
   return chartViewMode === 'exclude_tsmc' ? holdings.filter(h => !isTSMCHolding(h)) : holdings;
 }
+function getChartTotalWithCash(list) { return list.reduce((s,h)=>s+valueInTWD(h),0) + totalCashTWD(); }
 
-function buildCategoryData(list) {
-  const cats = {台股:0,'台灣ETF':0,美股:0,'美國ETF':0};
+function buildCategoryData(list, includeCash=false) {
+  const cats = {台股:0,'台灣ETF':0,美股:0,'美國ETF':0,現金:0};
   list.forEach(h => {
     const v = valueInTWD(h);
     if(h.market==='TW') cats['台股'] += v;
@@ -1015,17 +1099,19 @@ function buildCategoryData(list) {
     else if(h.market==='US') cats['美股'] += v;
     else if(h.market==='ETF-US') cats['美國ETF'] += v;
   });
+  if(includeCash) cats['現金'] = totalCashTWD();
   return cats;
 }
 
-function buildEtfStockData(list) {
-  const groups = {ETF:0, 個股:0};
+function buildEtfStockData(list, includeCash=false) {
+  const groups = {ETF:0, 個股:0, 現金:0};
   list.forEach(h => {
     const v = valueInTWD(h);
     if(h.market==='ETF-TW' || h.market==='ETF-US') groups['ETF'] += v;
     else if(h.market==='TW' || h.market==='US') groups['個股'] += v;
     else groups['其他'] = (groups['其他'] || 0) + v;
   });
+  if(includeCash) groups['現金'] = totalCashTWD();
   return groups;
 }
 
@@ -1085,29 +1171,108 @@ function makeDoughnutChart(canvasId, chartRef, labels, data, total, legendFont=1
 
 function updateCharts() {
   const chartHoldings = getChartHoldings();
-  const chartTotal = chartHoldings.reduce((s,h)=>s+valueInTWD(h),0);
+  const chartHoldingsTotal = chartHoldings.reduce((s,h)=>s+valueInTWD(h),0);
+  const chartTotal = getChartTotalWithCash(chartHoldings);
   const isExTSMC = chartViewMode === 'exclude_tsmc';
 
   document.getElementById('pie1-title').textContent = isExTSMC ? '資產類別佔比（排除台積電）' : '資產類別佔比';
   document.getElementById('pie2-title').textContent = isExTSMC ? '台股 / 美股明細（排除台積電）' : '台股 / 美股明細';
   document.getElementById('pie3-title').textContent = isExTSMC ? 'ETF / 個股比例（排除台積電）' : 'ETF / 個股比例';
   document.getElementById('chart-mode-note').textContent = isExTSMC
-    ? '目前圖表已排除台積電持倉（辨識 2330.TW / TSM / 名稱含台積電或 TSMC），並同步重算資產類別、持倉明細與 ETF / 個股比例。'
-    : '目前圖表包含所有持倉。';
+    ? '目前圖表已排除台積電持倉（辨識 2330.TW / TSM / 名稱含台積電或 TSMC），並同步重算資產類別、持倉明細與 ETF / 個股比例；現金仍保留在資產類別與 ETF / 個股比例中。'
+    : '目前圖表包含所有持倉，且資產類別與 ETF / 個股比例已納入現金 / 銀行帳戶。';
 
   // Pie 1: by market category
-  const cats = buildCategoryData(chartHoldings);
+  const cats = buildCategoryData(chartHoldings, true);
   const catKeys = Object.keys(cats).filter(k=>cats[k]>0);
   pie1Chart = makeDoughnutChart('pie1', pie1Chart, catKeys.length ? catKeys : ['無資料'], catKeys.length ? catKeys.map(k=>cats[k]) : [1], chartTotal, 12);
 
   // Pie 2: individual holdings; list enough items so that "其他" is below 10% when possible
-  const detailPie = buildHoldingDetailPieData(chartHoldings, chartTotal, 0.10);
-  pie2Chart = makeDoughnutChart('pie2', pie2Chart, detailPie.labels, detailPie.data, chartTotal, 11);
+  const detailPie = buildHoldingDetailPieData(chartHoldings, chartHoldingsTotal, 0.10);
+  pie2Chart = makeDoughnutChart('pie2', pie2Chart, detailPie.labels, detailPie.data, chartHoldingsTotal, 11);
 
   // Pie 3: ETF vs individual stocks
-  const etfStock = buildEtfStockData(chartHoldings);
+  const etfStock = buildEtfStockData(chartHoldings, true);
   const etfStockKeys = Object.keys(etfStock).filter(k=>etfStock[k]>0);
   pie3Chart = makeDoughnutChart('pie3', pie3Chart, etfStockKeys.length ? etfStockKeys : ['無資料'], etfStockKeys.length ? etfStockKeys.map(k=>etfStock[k]) : [1], chartTotal, 12);
+}
+
+
+// ── Cash / Bank accounts ─────────────────────────────────────────────
+function showCashForm() {
+  editCashIndex = -1;
+  document.getElementById('cash-form-title').textContent = '新增現金帳戶';
+  document.getElementById('c-name').value = '';
+  document.getElementById('c-currency').value = 'TWD';
+  document.getElementById('c-balance').value = '';
+  document.getElementById('c-note').value = '';
+  document.getElementById('cash-delete-btn').style.display = 'none';
+  document.getElementById('cash-edit-panel').classList.add('active');
+  document.getElementById('c-name').focus();
+}
+
+function editCashAccount(i) {
+  editCashIndex = i;
+  const c = cashAccounts[i];
+  document.getElementById('cash-form-title').textContent = '編輯現金帳戶：' + (c.name || '未命名');
+  document.getElementById('c-name').value = c.name || '';
+  document.getElementById('c-currency').value = (c.currency || 'TWD').toUpperCase();
+  document.getElementById('c-balance').value = c.balance || 0;
+  document.getElementById('c-note').value = c.note || '';
+  document.getElementById('cash-delete-btn').style.display = '';
+  document.getElementById('cash-edit-panel').classList.add('active');
+  document.getElementById('cash-edit-panel').scrollIntoView({behavior:'smooth'});
+}
+
+function hideCashForm() { document.getElementById('cash-edit-panel').classList.remove('active'); }
+
+function saveCashAccount() {
+  const name = document.getElementById('c-name').value.trim();
+  if(!name) { alert('請輸入帳戶名稱'); return; }
+  const c = {
+    name,
+    currency: document.getElementById('c-currency').value,
+    balance: parseFloat(document.getElementById('c-balance').value) || 0,
+    note: document.getElementById('c-note').value.trim()
+  };
+  if(editCashIndex >= 0) cashAccounts[editCashIndex] = c;
+  else cashAccounts.push(c);
+  saveAll();
+  hideCashForm();
+  refresh();
+}
+
+function deleteCashAccount() {
+  if(!confirm('確定刪除此現金 / 銀行帳戶？')) return;
+  cashAccounts.splice(editCashIndex, 1);
+  saveAll();
+  hideCashForm();
+  refresh();
+}
+
+function renderCashTable() {
+  const total = totalValueTWD();
+  const tbody = document.getElementById('cash-tbody');
+  if(!tbody) return;
+  if(cashAccounts.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7" style="color:var(--muted);text-align:center;padding:18px">尚未新增現金 / 銀行帳戶。賣出股票後，可先在這裡手動增加現金餘額，避免總資產失真。</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = cashAccounts.map((c,i) => {
+    const currency = (c.currency || 'TWD').toUpperCase();
+    const amount = parseFloat(c.balance) || 0;
+    const twd = cashValueInTWD(c);
+    const wt = total > 0 ? (twd / total) * 100 : 0;
+    return `<tr>
+      <td><strong style="font-weight:500">${c.name || '未命名'}</strong></td>
+      <td><span class="badge ${currency==='USD' ? 'badge-us' : 'badge-tw'}">${currency}</span></td>
+      <td class="num">${currency === 'USD' ? 'US$' : 'NT$'}${amount.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+      <td class="num"><strong style="font-weight:500">${fmtTWD(twd)}</strong></td>
+      <td class="num">${fmtNum(wt,1)}%</td>
+      <td style="color:var(--muted)">${c.note || ''}</td>
+      <td><button class="icon-btn btn-sm" onclick="editCashAccount(${i})" title="編輯">✏️</button></td>
+    </tr>`;
+  }).join('');
 }
 
 // ── Table ────────────────────────────────────────────────────────────
@@ -1504,6 +1669,7 @@ function importFromExcel() {
 function refresh() {
   updateSummary();
   updateCharts();
+  renderCashTable();
   renderTable();
   updateHistoryChart();
 }
