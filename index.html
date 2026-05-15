@@ -238,6 +238,18 @@
     outline: none;
   }
   .rate-input:focus { border-color: var(--accent); }
+
+  .privacy-toggle.active {
+    border-color: var(--accent3);
+    color: var(--accent3);
+    background: rgba(249,168,75,0.10);
+  }
+  body.privacy-mode .rate-input {
+    -webkit-text-security: disc;
+  }
+  body.privacy-mode .privacy-note {
+    color: var(--accent3);
+  }
   .tag { font-size: 13px; background: rgba(61,207,176,0.1); color: var(--accent2); padding: 2px 8px; border-radius: 3px; }
   .price-status { font-size: 13px; color: var(--muted); }
   .live-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--success); margin-right: 4px; animation: pulse 2s infinite; }
@@ -358,6 +370,8 @@
     <span class="live-dot"></span> 價格優先透過 Google Apps Script 後端抓取，失敗時使用瀏覽器備援
   </span>
   <button class="refresh-all-btn" onclick="refreshAllPrices()">↻ 更新所有價格</button>
+  <button class="refresh-all-btn privacy-toggle" id="privacy-toggle-btn" onclick="togglePrivacyMode()">👁 顯示數字</button>
+  <span class="price-status privacy-note" id="privacy-status" style="display:none">隱私模式：截圖時會隱藏金額、股數、報酬率與匯率</span>
 </div>
 
 <!-- Summary cards -->
@@ -587,6 +601,7 @@ let sortAsc = false;
 let pie1Chart, pie2Chart, pie3Chart, historyChart;
 let historyRangeDays = 30;
 let chartViewMode = 'all';
+let privacyMode = localStorage.getItem('portfolio_privacy_mode') === '1';
 
 let cloudApiUrl = localStorage.getItem('portfolio_cloud_api_url') || '';
 let cloudToken = localStorage.getItem('portfolio_cloud_token') || '';
@@ -627,6 +642,34 @@ if (holdings.length === 0) {
 function fmtTWD(n) { return 'NT$' + Math.round(n).toLocaleString(); }
 function fmtNum(n, d=2) { return parseFloat(n).toFixed(d); }
 function fmtPct(n) { const s = (n>=0?'+':'')+fmtNum(n,2)+'%'; return s; }
+
+function privateText(prefix='', suffix='') { return prefix + '••••' + suffix; }
+function displayTWD(n) { return privacyMode ? 'NT$••••' : fmtTWD(n); }
+function displayUSD(n) { return privacyMode ? 'US$••••' : 'US$' + Math.round(n).toLocaleString(); }
+function displayCurrency(prefix, n, digits=2) { return privacyMode ? prefix + '••••' : prefix + fmtNum(n, digits); }
+function displayNumber(n, digits=2) { return privacyMode ? '••••' : fmtNum(n, digits); }
+function displayPctValue(n, withSign=false) { return privacyMode ? '••••' : (withSign ? fmtPct(n) : fmtNum(n,2) + '%'); }
+function displayWeight(n, digits=1) { return privacyMode ? '••••' : fmtNum(n, digits) + '%'; }
+
+function updatePrivacyButton() {
+  const btn = document.getElementById('privacy-toggle-btn');
+  const note = document.getElementById('privacy-status');
+  const rateInput = document.getElementById('usd-rate');
+  document.body.classList.toggle('privacy-mode', privacyMode);
+  if(btn) {
+    btn.textContent = privacyMode ? '🙈 隱私模式：開' : '👁 顯示數字';
+    btn.classList.toggle('active', privacyMode);
+  }
+  if(note) note.style.display = privacyMode ? '' : 'none';
+  if(rateInput) rateInput.style.webkitTextSecurity = privacyMode ? 'disc' : '';
+}
+
+function togglePrivacyMode() {
+  privacyMode = !privacyMode;
+  localStorage.setItem('portfolio_privacy_mode', privacyMode ? '1' : '0');
+  updatePrivacyButton();
+  refresh();
+}
 
 function marketLabel(m) {
   if(m==='TW') return '<span class="badge badge-tw">台股</span>';
@@ -933,7 +976,7 @@ function setRange(days, btn) {
 
 function updateHistoryChart() {
   const count = snapshots.length;
-  document.getElementById('snapshot-count').textContent = count > 0 ? `共 ${count} 筆紀錄` : '';
+  document.getElementById('snapshot-count').textContent = count > 0 ? (privacyMode ? '共 •••• 筆紀錄' : `共 ${count} 筆紀錄`) : '';
 
   const emptyEl = document.getElementById('history-empty');
   const canvasEl = document.getElementById('history-chart');
@@ -1014,7 +1057,7 @@ function updateHistoryChart() {
         legend: { labels: { color:'#e8e8f0', font:{size:13}, boxWidth:14, padding:14 }},
         tooltip: {
           callbacks: {
-            label: ctx => ` ${ctx.dataset.label}: NT$${ctx.parsed.y.toLocaleString()}`
+            label: ctx => privacyMode ? ` ${ctx.dataset.label}: 已隱藏` : ` ${ctx.dataset.label}: NT$${ctx.parsed.y.toLocaleString()}`
           }
         }
       },
@@ -1026,7 +1069,7 @@ function updateHistoryChart() {
         y: {
           ticks: {
             color:'#7070a0', font:{size:12},
-            callback: v => 'NT$' + (v>=1000000 ? (v/1000000).toFixed(1)+'M' : (v/1000).toFixed(0)+'K')
+            callback: v => privacyMode ? '••••' : 'NT$' + (v>=1000000 ? (v/1000000).toFixed(1)+'M' : (v/1000).toFixed(0)+'K')
           },
           grid: { color:'rgba(42,42,53,0.8)' }
         }
@@ -1040,7 +1083,8 @@ const today = new Date();
 document.getElementById('today-date').textContent =
   today.toLocaleDateString('zh-TW');
 document.getElementById('usd-rate').value = usdRate;
-document.getElementById('hdr-rate').textContent = usdRate;
+document.getElementById('hdr-rate').textContent = privacyMode ? '••••' : usdRate;
+updatePrivacyButton();
 
 // ── Summary ──────────────────────────────────────────────────────────
 function updateSummary() {
@@ -1053,20 +1097,20 @@ function updateSummary() {
   const pnl = holdingsTotal - totalCost;
   const pnlPct = totalCost > 0 ? (pnl/totalCost)*100 : 0;
 
-  document.getElementById('total-twd').textContent = fmtTWD(total);
-  document.getElementById('total-usd-equiv').textContent = '≈ US$' + Math.round(total/usdRate).toLocaleString();
-  document.getElementById('cash-total').textContent = fmtTWD(cash);
-  document.getElementById('cash-pct').textContent = '佔比 ' + (total > 0 ? fmtNum(cash/total*100) : '0.00') + '%';
-  document.getElementById('tw-total').textContent = fmtTWD(tw);
-  document.getElementById('tw-pct').textContent = '佔比 ' + (total > 0 ? fmtNum(tw/total*100) : '0.00')+'%';
-  document.getElementById('us-total').textContent = fmtTWD(us);
-  document.getElementById('us-pct').textContent = '佔比 ' + (total > 0 ? fmtNum(us/total*100) : '0.00')+'%';
+  document.getElementById('total-twd').textContent = displayTWD(total);
+  document.getElementById('total-usd-equiv').textContent = privacyMode ? '≈ US$••••' : '≈ US$' + Math.round(total/usdRate).toLocaleString();
+  document.getElementById('cash-total').textContent = displayTWD(cash);
+  document.getElementById('cash-pct').textContent = privacyMode ? '佔比 ••••' : '佔比 ' + (total > 0 ? fmtNum(cash/total*100) : '0.00') + '%';
+  document.getElementById('tw-total').textContent = displayTWD(tw);
+  document.getElementById('tw-pct').textContent = privacyMode ? '佔比 ••••' : '佔比 ' + (total > 0 ? fmtNum(tw/total*100) : '0.00')+'%';
+  document.getElementById('us-total').textContent = displayTWD(us);
+  document.getElementById('us-pct').textContent = privacyMode ? '佔比 ••••' : '佔比 ' + (total > 0 ? fmtNum(us/total*100) : '0.00')+'%';
 
   const pnlEl = document.getElementById('unrealized-pnl');
-  pnlEl.textContent = (pnl>=0?'+':'')+fmtTWD(pnl);
+  pnlEl.textContent = privacyMode ? 'NT$••••' : (pnl>=0?'+':'')+fmtTWD(pnl);
   pnlEl.className = 'card-value ' + (pnl>=0?'up':'down');
-  document.getElementById('unrealized-pct').textContent = '報酬率 '+fmtPct(pnlPct);
-  document.getElementById('hdr-rate').textContent = usdRate;
+  document.getElementById('unrealized-pct').textContent = privacyMode ? '報酬率 ••••' : '報酬率 '+fmtPct(pnlPct);
+  document.getElementById('hdr-rate').textContent = privacyMode ? '••••' : usdRate;
 }
 
 // ── Charts ───────────────────────────────────────────────────────────
@@ -1160,7 +1204,7 @@ function makeDoughnutChart(canvasId, chartRef, labels, data, total, legendFont=1
         },
         tooltip: { callbacks: { label: ctx => {
           const pct = total > 0 ? ((ctx.parsed/total)*100).toFixed(1) : '0.0';
-          return ` ${fmtTWD(ctx.parsed)} (${pct}%)`;
+          return privacyMode ? ` ${ctx.label || ''}: 已隱藏` : ` ${fmtTWD(ctx.parsed)} (${pct}%)`;
         }}}
       }
     }
@@ -1265,9 +1309,9 @@ function renderCashTable() {
     return `<tr>
       <td><strong style="font-weight:500">${c.name || '未命名'}</strong></td>
       <td><span class="badge ${currency==='USD' ? 'badge-us' : 'badge-tw'}">${currency}</span></td>
-      <td class="num">${currency === 'USD' ? 'US$' : 'NT$'}${amount.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})}</td>
-      <td class="num"><strong style="font-weight:500">${fmtTWD(twd)}</strong></td>
-      <td class="num">${fmtNum(wt,1)}%</td>
+      <td class="num">${privacyMode ? (currency === 'USD' ? 'US$••••' : 'NT$••••') : (currency === 'USD' ? 'US$' : 'NT$') + amount.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+      <td class="num"><strong style="font-weight:500">${displayTWD(twd)}</strong></td>
+      <td class="num">${displayWeight(wt,1)}</td>
       <td style="color:var(--muted)">${c.note || ''}</td>
       <td><button class="icon-btn btn-sm" onclick="editCashAccount(${i})" title="編輯">✏️</button></td>
     </tr>`;
@@ -1309,13 +1353,13 @@ function renderTable() {
     return `<tr>
       <td><strong style="font-weight:500">${h.name||h.ticker}</strong><br><span style="font-size:11px;color:var(--muted)">${h.ticker}</span></td>
       <td>${marketLabel(h.market)}</td>
-      <td class="num">${fmtNum(h.shares,3)}</td>
-      <td class="num">${currency}${fmtNum(h.price,2)}</td>
-      <td class="num" style="color:var(--muted)">${currency}${fmtNum(h.cost,2)}</td>
-      <td class="num"><strong style="font-weight:500">${fmtTWD(h.value_twd)}</strong></td>
-      <td class="num ${pnl>=0?'up':'down'}">${fmtPct(pnl)}</td>
+      <td class="num">${displayNumber(h.shares,3)}</td>
+      <td class="num">${displayCurrency(currency, h.price, 2)}</td>
+      <td class="num" style="color:var(--muted)">${displayCurrency(currency, h.cost, 2)}</td>
+      <td class="num"><strong style="font-weight:500">${displayTWD(h.value_twd)}</strong></td>
+      <td class="num ${pnl>=0?'up':'down'}">${displayPctValue(pnl, true)}</td>
       <td class="num">
-        <span style="font-size:11px;margin-right:4px">${fmtNum(wt,1)}%</span>
+        <span style="font-size:11px;margin-right:4px">${displayWeight(wt,1)}</span>
         <span class="bar-bg"><span class="bar-fill" style="width:${barW}px"></span></span>
       </td>
       <td>
@@ -1675,6 +1719,7 @@ function refresh() {
 
 async function initApp() {
   initCloudPanel();
+  updatePrivacyButton();
   refresh();
   if(cloudEnabled && cloudApiUrl) {
     await loadCloudData(false);
