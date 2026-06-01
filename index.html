@@ -689,7 +689,8 @@
         <th onclick="sortBy('market')">市場</th>
         <th class="num" onclick="sortBy('shares')">股數</th>
         <th class="num" onclick="sortBy('price')">現價</th>
-        <th class="num" onclick="sortBy('cost')">成本</th>
+        <th class="num" onclick="sortBy('cost')">單位成本</th>
+        <th class="num" onclick="sortBy('cost_twd')">總成本（台幣）</th>
         <th class="num" onclick="sortBy('value_twd')">市值（台幣）</th>
         <th class="num" onclick="sortBy('unrealized_twd')">未實現損益</th>
         <th class="num" onclick="sortBy('pnl_pct')">損益%</th>
@@ -1671,7 +1672,7 @@ function sortBy(key) {
 }
 
 function renderTable() {
-  const total = totalValueTWD();
+  const holdingsTotal = holdings.reduce((s,h)=>s+valueInTWD(h),0);
   const q = document.getElementById('search-box').value.toLowerCase();
   let rows = holdings.map((h,i)=>{
     const value_twd = valueInTWD(h);
@@ -1679,7 +1680,7 @@ function renderTable() {
     const pnl_pct = h.price > 0 && h.cost > 0 ? ((h.price-h.cost)/h.cost)*100 : 0;
     const unrealized_native = unrealizedNative(h);
     const unrealized_twd = unrealizedTWD(h);
-    const weight = total > 0 ? (value_twd/total)*100 : 0;
+    const weight = holdingsTotal > 0 ? (value_twd/holdingsTotal)*100 : 0;
     return {...h, idx:i, value_twd, cost_twd, pnl_pct, unrealized_native, unrealized_twd, weight};
   });
 
@@ -1703,6 +1704,7 @@ function renderTable() {
       <td class="num">${displayNumber(h.shares,3)}</td>
       <td class="num">${displayCurrency(currency, h.price, 2)}</td>
       <td class="num" style="color:var(--muted)">${displayCurrency(currency, h.cost, 2)}</td>
+      <td class="num" style="color:var(--muted)">${displayTWD(h.cost_twd)}</td>
       <td class="num"><strong style="font-weight:500">${displayTWD(h.value_twd)}</strong></td>
       <td class="num">${displayUnrealizedCell(h)}</td>
       <td class="num ${pnl>=0?'up':'down'}">${displayPctValue(pnl, true)}</td>
@@ -2032,14 +2034,14 @@ function applyRate() {
 
 // ── Export ────────────────────────────────────────────────────────────
 function exportCSV() {
-  const header = ['代號','名稱','市場','股數','成本','現價','市值(台幣)','未實現損益(台幣)','未實現損益(原幣)','損益%','佔比%'];
-  const total = totalValueTWD();
+  const header = ['代號','名稱','市場','股數','單位成本','總成本(台幣)','現價','市值(台幣)','未實現損益(台幣)','未實現損益(原幣)','損益%','持倉佔比%(不含現金)'];
+  const holdingsTotal = holdings.reduce((s,h)=>s+valueInTWD(h),0);
   const rows = holdings.map(h=>{
     const v=valueInTWD(h), pnl=h.cost>0?((h.price-h.cost)/h.cost)*100:0;
     const unNative = unrealizedNative(h);
     const unTwd = unrealizedTWD(h);
-    return [h.ticker, h.name, h.market, h.shares, h.cost, h.price,
-      Math.round(v), Math.round(unTwd), fmtNum(unNative,2), fmtNum(pnl,2), fmtNum(v/total*100,2)];
+    return [h.ticker, h.name, h.market, h.shares, h.cost, Math.round(costInTWD(h)), h.price,
+      Math.round(v), Math.round(unTwd), fmtNum(unNative,2), fmtNum(pnl,2), fmtNum(holdingsTotal>0 ? v/holdingsTotal*100 : 0,2)];
   });
   const csv = [header,...rows].map(r=>r.join(',')).join('\n');
   const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8'});
