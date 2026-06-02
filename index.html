@@ -552,10 +552,13 @@
     <span>📈 資產成長軌跡</span>
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
       <span class="snapshot-count" id="snapshot-count"></span>
-      <button class="history-range-btn active" onclick="setRange(30,this)">1個月</button>
-      <button class="history-range-btn" onclick="setRange(90,this)">3個月</button>
-      <button class="history-range-btn" onclick="setRange(180,this)">6個月</button>
-      <button class="history-range-btn" onclick="setRange(0,this)">全部</button>
+      <button class="history-range-btn active" data-history-mode="amount" onclick="setHistoryMode('amount',this)">金額</button>
+      <button class="history-range-btn" data-history-mode="ratio" onclick="setHistoryMode('ratio',this)">比例</button>
+      <span style="width:1px;height:18px;background:var(--border);display:inline-block;margin:0 2px"></span>
+      <button class="history-range-btn active" data-range-btn="1" onclick="setRange(30,this)">1個月</button>
+      <button class="history-range-btn" data-range-btn="1" onclick="setRange(90,this)">3個月</button>
+      <button class="history-range-btn" data-range-btn="1" onclick="setRange(180,this)">6個月</button>
+      <button class="history-range-btn" data-range-btn="1" onclick="setRange(0,this)">全部</button>
       <button class="refresh-all-btn" onclick="snapshotNow(true)" title="手動記錄今日快照">📌 記錄今日</button>
       <button class="refresh-all-btn" onclick="clearHistory()" title="清除所有歷史紀錄" style="color:var(--danger);border-color:var(--danger)">🗑 清除歷史</button>
     </div>
@@ -718,6 +721,7 @@ let sortKey = 'value_twd';
 let sortAsc = false;
 let pie1Chart, pie2Chart, pie3Chart, historyChart;
 let historyRangeDays = 30;
+let historyMode = 'amount';
 let chartViewMode = 'all';
 let privacyMode = localStorage.getItem('portfolio_privacy_mode') === '1';
 let reportMode = localStorage.getItem('portfolio_report_mode') === '1';
@@ -1187,6 +1191,7 @@ async function loadCloudData(manual=false) {
       total: Math.round(parseFloat(s.total) || 0),
       tw: Math.round(parseFloat(s.tw) || 0),
       us: Math.round(parseFloat(s.us) || 0),
+      cash: Math.round(parseFloat(s.cash) || Math.max((parseFloat(s.total)||0) - (parseFloat(s.tw)||0) - (parseFloat(s.us)||0), 0)),
       usdRate: parseFloat(s.usdRate) || usdRate
     })).filter(s => s.date);
     if(data.usdRate) usdRate = parseFloat(data.usdRate) || usdRate;
@@ -1279,14 +1284,14 @@ async function saveCloudData(manual=false) {
 function todayStr() { return new Date().toISOString().slice(0,10); }
 
 function snapshotNow(manual=false) {
-  if(holdings.length === 0) return;
+  if(holdings.length === 0 && cashAccounts.length === 0) return;
   const dateKey = todayStr();
-  const total = totalValueTWD();
-  const tw = holdings.filter(h=>h.market==='TW'||h.market==='ETF-TW').reduce((s,h)=>s+valueInTWD(h),0)
-    + cashAccounts.filter(c=>String(c.currency||'TWD').toUpperCase()==='TWD').reduce((s,c)=>s+cashValueInTWD(c),0);
-  const us = total - tw;
+  const tw = holdings.filter(h=>h.market==='TW'||h.market==='ETF-TW').reduce((s,h)=>s+valueInTWD(h),0);
+  const us = holdings.filter(h=>h.market==='US'||h.market==='ETF-US').reduce((s,h)=>s+valueInTWD(h),0);
+  const cash = totalCashTWD();
+  const total = tw + us + cash;
   const existing = snapshots.findIndex(s=>s.date===dateKey);
-  const snap = { date: dateKey, total: Math.round(total), tw: Math.round(tw), us: Math.round(us), usdRate };
+  const snap = { date: dateKey, total: Math.round(total), tw: Math.round(tw), us: Math.round(us), cash: Math.round(cash), usdRate };
   if(existing>=0) {
     if(manual || confirm(`今天（${dateKey}）已有快照，是否覆蓋？`)) {
       snapshots[existing] = snap;
@@ -1315,7 +1320,14 @@ function clearHistory() {
 
 function setRange(days, btn) {
   historyRangeDays = days;
-  document.querySelectorAll('.history-range-btn').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('[data-range-btn="1"]').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  updateHistoryChart();
+}
+
+function setHistoryMode(mode, btn) {
+  historyMode = mode === 'ratio' ? 'ratio' : 'amount';
+  document.querySelectorAll('[data-history-mode]').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
   updateHistoryChart();
 }
@@ -1345,67 +1357,53 @@ function updateHistoryChart() {
   }
   if(filtered.length===0) filtered = snapshots.slice(-1);
 
-  const labels = filtered.map(s=>{
+  const normalized = filtered.map(s => {
+    const total = Math.round(parseFloat(s.total) || 0);
+    const tw = Math.round(parseFloat(s.tw) || 0);
+    const us = Math.round(parseFloat(s.us) || 0);
+    const cash = Number.isFinite(parseFloat(s.cash)) ? Math.round(parseFloat(s.cash)) : Math.max(total - tw - us, 0);
+    return {...s, total, tw, us, cash};
+  });
+
+  const labels = normalized.map(s=>{
     const [y,m,d] = s.date.split('-');
     return `${m}/${d}`;
   });
-  const totals = filtered.map(s=>s.total);
-  const tws = filtered.map(s=>s.tw);
-  const uss = filtered.map(s=>s.us);
+
+  const baseLine = { backgroundColor:'transparent', fill:false, tension:0.3, borderWidth:1.6, borderDash:[4,3], pointRadius:0, pointHoverRadius:4 };
+  let datasets;
+  let yTickCallback;
+  let tooltipLabel;
+
+  if(historyMode === 'ratio') {
+    datasets = [
+      { label:'台股持倉 %', data: normalized.map(s=>s.total>0 ? s.tw/s.total*100 : 0), borderColor:'#4ea8e8', ...baseLine },
+      { label:'美股持倉 %', data: normalized.map(s=>s.total>0 ? s.us/s.total*100 : 0), borderColor:'#f9a84b', ...baseLine },
+      { label:'現金 %', data: normalized.map(s=>s.total>0 ? s.cash/s.total*100 : 0), borderColor:'#3dcfb0', ...baseLine }
+    ];
+    yTickCallback = v => privacyMode ? '••••' : v.toFixed(0) + '%';
+    tooltipLabel = ctx => privacyMode ? ` ${ctx.dataset.label}: 已隱藏` : ` ${ctx.dataset.label}: ${ctx.parsed.y.toFixed(2)}%`;
+  } else {
+    datasets = [
+      { label:'總資產', data: normalized.map(s=>s.total), borderColor:'#7c6dfa', backgroundColor:'rgba(124,109,250,0.08)', fill:true, tension:0.3, borderWidth:2.5, pointRadius:normalized.length>60?0:3, pointHoverRadius:5 },
+      { label:'台股持倉', data: normalized.map(s=>s.tw), borderColor:'#4ea8e8', ...baseLine },
+      { label:'美股持倉', data: normalized.map(s=>s.us), borderColor:'#f9a84b', ...baseLine },
+      { label:'現金', data: normalized.map(s=>s.cash), borderColor:'#3dcfb0', ...baseLine }
+    ];
+    yTickCallback = v => privacyMode ? '••••' : 'NT$' + (v>=1000000 ? (v/1000000).toFixed(1)+'M' : (v/1000).toFixed(0)+'K');
+    tooltipLabel = ctx => privacyMode ? ` ${ctx.dataset.label}: 已隱藏` : ` ${ctx.dataset.label}: NT$${Math.round(ctx.parsed.y).toLocaleString()}`;
+  }
 
   if(historyChart) historyChart.destroy();
   historyChart = new Chart(document.getElementById('history-chart'), {
     type: 'line',
-    data: {
-      labels,
-      datasets: [
-        {
-          label: '總資產',
-          data: totals,
-          borderColor: '#7c6dfa',
-          backgroundColor: 'rgba(124,109,250,0.08)',
-          fill: true,
-          tension: 0.3,
-          borderWidth: 2.5,
-          pointRadius: filtered.length > 60 ? 0 : 3,
-          pointHoverRadius: 5,
-        },
-        {
-          label: '台股',
-          data: tws,
-          borderColor: '#4ea8e8',
-          backgroundColor: 'transparent',
-          fill: false,
-          tension: 0.3,
-          borderWidth: 1.5,
-          borderDash: [4,3],
-          pointRadius: 0,
-          pointHoverRadius: 4,
-        },
-        {
-          label: '美股',
-          data: uss,
-          borderColor: '#f9a84b',
-          backgroundColor: 'transparent',
-          fill: false,
-          tension: 0.3,
-          borderWidth: 1.5,
-          borderDash: [4,3],
-          pointRadius: 0,
-          pointHoverRadius: 4,
-        }
-      ]
-    },
+    data: { labels, datasets },
     options: {
       responsive: true, maintainAspectRatio: false,
       interaction: { mode:'index', intersect:false },
       plugins: {
         legend: { labels: { color:'#e8e8f0', font:{size:13}, boxWidth:14, padding:14 }},
-        tooltip: {
-          callbacks: {
-            label: ctx => privacyMode ? ` ${ctx.dataset.label}: 已隱藏` : ` ${ctx.dataset.label}: NT$${ctx.parsed.y.toLocaleString()}`
-          }
-        }
+        tooltip: { callbacks: { label: tooltipLabel } }
       },
       scales: {
         x: {
@@ -1413,10 +1411,7 @@ function updateHistoryChart() {
           grid: { color:'rgba(42,42,53,0.8)' }
         },
         y: {
-          ticks: {
-            color:'#7070a0', font:{size:12},
-            callback: v => privacyMode ? '••••' : 'NT$' + (v>=1000000 ? (v/1000000).toFixed(1)+'M' : (v/1000).toFixed(0)+'K')
-          },
+          ticks: { color:'#7070a0', font:{size:12}, callback: yTickCallback },
           grid: { color:'rgba(42,42,53,0.8)' }
         }
       }
