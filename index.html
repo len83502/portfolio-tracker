@@ -386,6 +386,7 @@
   body.report-mode .holdings-header button,
   body.report-mode .target-settings,
   body.report-mode .target-actions,
+  body.report-mode #realized-panel,
   body.report-mode .history-range-btn,
   body.report-mode .refresh-all-btn,
   body.report-mode #price-status,
@@ -472,6 +473,11 @@
     <div class="card-label">未實現損益</div>
     <div class="card-value" id="unrealized-pnl">—</div>
     <div class="card-sub" id="unrealized-pct">報酬率 —</div>
+  </div>
+  <div class="card">
+    <div class="card-label">已實現損益</div>
+    <div class="card-value" id="realized-pnl">—</div>
+    <div class="card-sub" id="realized-sub">今年 / 全部</div>
   </div>
 </div>
 
@@ -679,6 +685,111 @@
   </table>
 </div>
 
+<!-- Realized P&L records -->
+<div class="holdings-panel" id="realized-panel">
+  <div class="holdings-header">
+    <div>
+      <div class="panel-title" style="margin:0">已實現損益紀錄</div>
+      <div class="note">這是獨立紀錄：不會自動扣持倉，也不會自動增加現金。賣出後請自行調整持倉股數與現金帳戶。</div>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <button class="btn-primary" onclick="showRealizedForm()">＋ 新增已實現損益</button>
+      <button class="btn-ghost" onclick="exportRealizedCSV()">↓ 匯出紀錄 CSV</button>
+    </div>
+  </div>
+
+  <div class="edit-panel" id="realized-edit-panel">
+    <div class="panel-title" id="realized-form-title">新增已實現損益</div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>日期</label>
+        <input id="r-date" type="date">
+      </div>
+      <div class="form-group">
+        <label>代號</label>
+        <input id="r-ticker" placeholder="例：2330.TW、VTI" oninput="this.value=this.value.toUpperCase(); autoFillRealizedFromTicker()">
+      </div>
+      <div class="form-group">
+        <label>名稱</label>
+        <input id="r-name" placeholder="可由持倉自動帶入">
+      </div>
+      <div class="form-group">
+        <label>市場</label>
+        <select id="r-market" onchange="syncRealizedCurrencyFromMarket()">
+          <option value="TW">台股</option>
+          <option value="US">美股</option>
+          <option value="ETF-TW">台灣 ETF</option>
+          <option value="ETF-US">美國 ETF</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>幣別</label>
+        <select id="r-currency">
+          <option value="TWD">TWD</option>
+          <option value="USD">USD</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>賣出股數</label>
+        <input id="r-shares" type="number" placeholder="0" step="0.001" oninput="updateRealizedPreview()">
+      </div>
+      <div class="form-group">
+        <label>賣出均價（原幣）</label>
+        <input id="r-sell-price" type="number" placeholder="0" step="0.01" oninput="updateRealizedPreview()">
+      </div>
+      <div class="form-group">
+        <label>成本均價（原幣）</label>
+        <input id="r-cost-price" type="number" placeholder="可自動帶入" step="0.01" oninput="updateRealizedPreview()">
+      </div>
+      <div class="form-group">
+        <label>手續費 / 稅費（原幣）</label>
+        <input id="r-fees" type="number" placeholder="0" step="0.01" oninput="updateRealizedPreview()">
+      </div>
+      <div class="form-group">
+        <label>交易匯率</label>
+        <input id="r-fx-rate" type="number" placeholder="TWD=1，USD=目前匯率" step="0.0001" oninput="updateRealizedPreview()">
+      </div>
+      <div class="form-group">
+        <label>手動覆蓋損益（原幣，可空白）</label>
+        <input id="r-override-pnl" type="number" placeholder="留空則自動計算" step="0.01" oninput="updateRealizedPreview()">
+      </div>
+      <div class="form-group">
+        <label>備註</label>
+        <input id="r-note" placeholder="例：依券商報表修正、部分獲利了結">
+      </div>
+    </div>
+    <div class="note" id="realized-preview" style="margin-top:10px">系統會依股數、賣出均價、成本均價與費用自動計算；若填入手動覆蓋損益，會優先採用覆蓋值。</div>
+    <div class="btn-row">
+      <button class="btn-primary" onclick="saveRealizedRecord()">儲存</button>
+      <button class="btn-ghost" onclick="hideRealizedForm()">取消</button>
+      <button class="btn-danger btn-sm" id="realized-delete-btn" style="display:none" onclick="deleteRealizedRecord()">刪除</button>
+    </div>
+  </div>
+
+  <div class="rate-bar" style="margin-bottom:14px">
+    <span>全部累計：<strong id="realized-total-inline">—</strong></span>
+    <span>今年累計：<strong id="realized-ytd-inline">—</strong></span>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th onclick="sortRealizedBy('date')">日期</th>
+        <th onclick="sortRealizedBy('ticker')">名稱</th>
+        <th>市場</th>
+        <th class="num" onclick="sortRealizedBy('shares')">賣出股數</th>
+        <th class="num" onclick="sortRealizedBy('sellPrice')">賣出均價</th>
+        <th class="num" onclick="sortRealizedBy('costPrice')">成本均價</th>
+        <th class="num" onclick="sortRealizedBy('pnlTwd')">已實現損益</th>
+        <th class="num" onclick="sortRealizedBy('returnPct')">報酬率</th>
+        <th>備註</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody id="realized-tbody"></tbody>
+  </table>
+</div>
+
 <!-- Holdings table -->
 <div class="holdings-panel">
   <div class="holdings-header">
@@ -715,8 +826,12 @@ let holdings = JSON.parse(localStorage.getItem('portfolio_holdings') || '[]');
 let usdRate = parseFloat(localStorage.getItem('portfolio_usd_rate') || '31.46');
 let snapshots = JSON.parse(localStorage.getItem('portfolio_snapshots') || '[]');
 let cashAccounts = JSON.parse(localStorage.getItem('portfolio_cash_accounts') || '[]');
+let realizedRecords = JSON.parse(localStorage.getItem('portfolio_realized_records') || '[]');
 let editIndex = -1;
 let editCashIndex = -1;
+let editRealizedIndex = -1;
+let realizedSortKey = 'date';
+let realizedSortAsc = false;
 let sortKey = 'value_twd';
 let sortAsc = false;
 let pie1Chart, pie2Chart, pie3Chart, historyChart;
@@ -839,6 +954,7 @@ function togglePrivacyMode() {
   updatePrivacyButton();
   updateReportModeButton();
   refresh();
+  updateRealizedPreview();
 }
 
 
@@ -1048,6 +1164,7 @@ function resetToLatest() {
   localStorage.removeItem('portfolio_holdings');
   localStorage.removeItem('portfolio_snapshots');
   localStorage.removeItem('portfolio_cash_accounts');
+  localStorage.removeItem('portfolio_realized_records');
   location.reload();
 }
 
@@ -1056,6 +1173,7 @@ function saveAll(options={}) {
   localStorage.setItem('portfolio_usd_rate', usdRate);
   localStorage.setItem('portfolio_snapshots', JSON.stringify(snapshots));
   localStorage.setItem('portfolio_cash_accounts', JSON.stringify(cashAccounts));
+  localStorage.setItem('portfolio_realized_records', JSON.stringify(realizedRecords));
   localStorage.setItem('portfolio_allocation_targets', JSON.stringify(allocationTargets));
   if(cloudEnabled && !options.skipCloud && !isLoadingCloud) scheduleCloudSave();
 }
@@ -1186,6 +1304,20 @@ async function loadCloudData(manual=false) {
       balance: parseFloat(c.balance) || 0,
       note: String(c.note || '').trim()
     })).filter(c => c.name);
+    if(Array.isArray(data.realizedRecords)) realizedRecords = data.realizedRecords.map(r => ({
+      date: String(r.date || '').slice(0,10),
+      ticker: String(r.ticker || '').trim().toUpperCase(),
+      name: String(r.name || r.ticker || '').trim(),
+      market: String(r.market || 'TW').trim(),
+      currency: String(r.currency || ((r.market === 'US' || r.market === 'ETF-US') ? 'USD' : 'TWD')).trim().toUpperCase(),
+      shares: parseFloat(r.shares) || 0,
+      sellPrice: parseFloat(r.sellPrice) || 0,
+      costPrice: parseFloat(r.costPrice) || 0,
+      fees: parseFloat(r.fees) || 0,
+      fxRate: parseFloat(r.fxRate) || (((r.market === 'US' || r.market === 'ETF-US') || String(r.currency).toUpperCase()==='USD') ? usdRate : 1),
+      overridePnl: r.overridePnl === '' || r.overridePnl === null || typeof r.overridePnl === 'undefined' ? '' : parseFloat(r.overridePnl),
+      note: String(r.note || '').trim()
+    })).filter(r => r.ticker);
     if(Array.isArray(data.snapshots)) snapshots = data.snapshots.map(s => ({
       date: String(s.date || '').slice(0,10),
       total: Math.round(parseFloat(s.total) || 0),
@@ -1269,7 +1401,7 @@ async function saveCloudData(manual=false) {
     const auth = await jsonpRequest(cloudUrlWithParams('ping'), 8000);
     if(!auth || auth.ok !== true) throw new Error(auth?.error || 'Token 驗證失敗');
     setSyncStatus('正在上傳到 Google Sheets...', 'warn');
-    const payload = { holdings, cashAccounts, snapshots, usdRate, allocationTargets, updatedAt: new Date().toISOString() };
+    const payload = { holdings, cashAccounts, realizedRecords, snapshots, usdRate, allocationTargets, updatedAt: new Date().toISOString() };
     await postViaHiddenForm(cloudApiUrl, payload);
     setSyncStatus('Google Sheets 已儲存：' + new Date().toLocaleTimeString('zh-TW'), 'ok');
     if(manual) alert('已送出到 Google Sheets。若要確認內容，請打開 Google Sheet 查看。');
@@ -1437,6 +1569,8 @@ function updateSummary() {
   const us = holdings.filter(h=>h.market==='US'||h.market==='ETF-US').reduce((s,h)=>s+valueInTWD(h),0);
   const pnl = holdingsTotal - totalCost;
   const pnlPct = totalCost > 0 ? (pnl/totalCost)*100 : 0;
+  const realizedAll = totalRealizedTWD();
+  const realizedYtd = totalRealizedTWD(new Date().getFullYear());
 
   document.getElementById('total-twd').textContent = displayTWD(total);
   document.getElementById('total-usd-equiv').textContent = privacyMode ? '≈ US$••••' : '≈ US$' + Math.round(total/usdRate).toLocaleString();
@@ -1451,6 +1585,13 @@ function updateSummary() {
   pnlEl.textContent = privacyMode ? 'NT$••••' : (pnl>=0?'+':'')+fmtTWD(pnl);
   pnlEl.className = 'card-value ' + (pnl>=0?'up':'down');
   document.getElementById('unrealized-pct').textContent = privacyMode ? '報酬率 ••••' : '報酬率 '+fmtPct(pnlPct);
+  const realizedEl = document.getElementById('realized-pnl');
+  if(realizedEl) {
+    realizedEl.textContent = privacyMode ? 'NT$••••' : (realizedYtd>=0?'+':'') + fmtTWD(realizedYtd);
+    realizedEl.className = 'card-value ' + (realizedYtd>=0?'up':'down');
+  }
+  const realizedSub = document.getElementById('realized-sub');
+  if(realizedSub) realizedSub.textContent = privacyMode ? '今年 / 全部 ••••' : `今年｜全部 ${(realizedAll>=0?'+':'')}${fmtTWD(realizedAll)}`;
   document.getElementById('hdr-rate').textContent = privacyMode ? '••••' : usdRate;
 }
 
@@ -1657,6 +1798,201 @@ function renderCashTable() {
       <td><button class="icon-btn btn-sm" onclick="editCashAccount(${i})" title="編輯">✏️</button></td>
     </tr>`;
   }).join('');
+}
+
+// ── Realized P&L records ─────────────────────────────────────────────
+function marketToCurrency(m) { return (m === 'US' || m === 'ETF-US') ? 'USD' : 'TWD'; }
+function normalizeTicker(t) { return (t || '').toUpperCase().trim(); }
+function findHoldingByTicker(ticker) {
+  const t = normalizeTicker(ticker);
+  return holdings.find(h => normalizeTicker(h.ticker) === t) || null;
+}
+function findRealizedByTicker(ticker) {
+  const t = normalizeTicker(ticker);
+  return [...realizedRecords].reverse().find(r => normalizeTicker(r.ticker) === t) || null;
+}
+function calcRealized(r) {
+  const shares = parseFloat(r.shares) || 0;
+  const sellPrice = parseFloat(r.sellPrice) || 0;
+  const costPrice = parseFloat(r.costPrice) || 0;
+  const fees = parseFloat(r.fees) || 0;
+  const fx = parseFloat(r.fxRate) || (String(r.currency).toUpperCase()==='USD' ? usdRate : 1);
+  const autoPnl = shares * sellPrice - shares * costPrice - fees;
+  const hasOverride = r.overridePnl !== '' && r.overridePnl !== null && typeof r.overridePnl !== 'undefined' && !isNaN(parseFloat(r.overridePnl));
+  const pnlNative = hasOverride ? parseFloat(r.overridePnl) : autoPnl;
+  const pnlTwd = String(r.currency).toUpperCase() === 'USD' ? pnlNative * fx : pnlNative;
+  const costBase = shares * costPrice;
+  const returnPct = costBase > 0 ? pnlNative / costBase * 100 : 0;
+  return {autoPnl, pnlNative, pnlTwd, returnPct, fx};
+}
+function totalRealizedTWD(year=null) {
+  return realizedRecords.reduce((s,r)=>{
+    if(year !== null) {
+      const y = String(r.date || '').slice(0,4);
+      if(y !== String(year)) return s;
+    }
+    return s + calcRealized(r).pnlTwd;
+  },0);
+}
+function syncRealizedCurrencyFromMarket() {
+  const m = document.getElementById('r-market').value;
+  const currency = marketToCurrency(m);
+  document.getElementById('r-currency').value = currency;
+  const fxEl = document.getElementById('r-fx-rate');
+  if(!fxEl.value || parseFloat(fxEl.value) === 1 || parseFloat(fxEl.value) === usdRate) fxEl.value = currency === 'USD' ? usdRate : 1;
+  updateRealizedPreview();
+}
+function autoFillRealizedFromTicker() {
+  const ticker = normalizeTicker(document.getElementById('r-ticker').value);
+  if(!ticker) return;
+  const h = findHoldingByTicker(ticker);
+  const prior = h ? null : findRealizedByTicker(ticker);
+  const src = h || prior;
+  if(!src) return;
+  if(!document.getElementById('r-name').value) document.getElementById('r-name').value = src.name || ticker;
+  if(src.market) document.getElementById('r-market').value = src.market;
+  const currency = src.currency || marketToCurrency(src.market);
+  document.getElementById('r-currency').value = currency;
+  if(h && (!document.getElementById('r-cost-price').value || parseFloat(document.getElementById('r-cost-price').value) === 0)) document.getElementById('r-cost-price').value = h.cost || 0;
+  if(h && (!document.getElementById('r-sell-price').value || parseFloat(document.getElementById('r-sell-price').value) === 0)) document.getElementById('r-sell-price').value = h.price || '';
+  if(!document.getElementById('r-fx-rate').value) document.getElementById('r-fx-rate').value = currency === 'USD' ? usdRate : 1;
+  updateRealizedPreview();
+}
+function showRealizedForm() {
+  editRealizedIndex = -1;
+  document.getElementById('realized-form-title').textContent = '新增已實現損益';
+  document.getElementById('r-date').value = todayStr();
+  ['r-ticker','r-name','r-shares','r-sell-price','r-cost-price','r-fees','r-override-pnl','r-note'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('r-market').value = 'TW';
+  document.getElementById('r-currency').value = 'TWD';
+  document.getElementById('r-fx-rate').value = 1;
+  document.getElementById('realized-delete-btn').style.display = 'none';
+  document.getElementById('realized-edit-panel').classList.add('active');
+  updateRealizedPreview();
+  document.getElementById('r-ticker').focus();
+}
+function editRealizedRecord(i) {
+  editRealizedIndex = i;
+  const r = realizedRecords[i];
+  document.getElementById('realized-form-title').textContent = '編輯已實現損益：' + (r.name || r.ticker || '');
+  document.getElementById('r-date').value = r.date || todayStr();
+  document.getElementById('r-ticker').value = r.ticker || '';
+  document.getElementById('r-name').value = r.name || '';
+  document.getElementById('r-market').value = r.market || 'TW';
+  document.getElementById('r-currency').value = r.currency || marketToCurrency(r.market);
+  document.getElementById('r-shares').value = r.shares || '';
+  document.getElementById('r-sell-price').value = r.sellPrice || '';
+  document.getElementById('r-cost-price').value = r.costPrice || '';
+  document.getElementById('r-fees').value = r.fees || 0;
+  document.getElementById('r-fx-rate').value = r.fxRate || (document.getElementById('r-currency').value === 'USD' ? usdRate : 1);
+  document.getElementById('r-override-pnl').value = r.overridePnl === '' || r.overridePnl === null || typeof r.overridePnl === 'undefined' ? '' : r.overridePnl;
+  document.getElementById('r-note').value = r.note || '';
+  document.getElementById('realized-delete-btn').style.display = '';
+  document.getElementById('realized-edit-panel').classList.add('active');
+  document.getElementById('realized-edit-panel').scrollIntoView({behavior:'smooth'});
+  updateRealizedPreview();
+}
+function hideRealizedForm() { document.getElementById('realized-edit-panel').classList.remove('active'); }
+function getRealizedFormData() {
+  const market = document.getElementById('r-market').value;
+  const currency = document.getElementById('r-currency').value || marketToCurrency(market);
+  return {
+    date: document.getElementById('r-date').value || todayStr(),
+    ticker: normalizeTicker(document.getElementById('r-ticker').value),
+    name: document.getElementById('r-name').value.trim() || normalizeTicker(document.getElementById('r-ticker').value),
+    market,
+    currency,
+    shares: parseFloat(document.getElementById('r-shares').value) || 0,
+    sellPrice: parseFloat(document.getElementById('r-sell-price').value) || 0,
+    costPrice: parseFloat(document.getElementById('r-cost-price').value) || 0,
+    fees: parseFloat(document.getElementById('r-fees').value) || 0,
+    fxRate: parseFloat(document.getElementById('r-fx-rate').value) || (currency === 'USD' ? usdRate : 1),
+    overridePnl: document.getElementById('r-override-pnl').value === '' ? '' : parseFloat(document.getElementById('r-override-pnl').value),
+    note: document.getElementById('r-note').value.trim()
+  };
+}
+function updateRealizedPreview() {
+  const el = document.getElementById('realized-preview');
+  if(!el) return;
+  const r = getRealizedFormData();
+  const c = calcRealized(r);
+  const nativePrefix = r.currency === 'USD' ? 'US$' : 'NT$';
+  const nativeText = privacyMode ? nativePrefix + '••••' : nativePrefix + fmtNum(c.pnlNative, 2);
+  const twdText = privacyMode ? 'NT$••••' : fmtTWD(c.pnlTwd);
+  const source = r.overridePnl === '' ? '系統公式試算' : '採用手動覆蓋值';
+  el.textContent = `${source}：${nativeText}｜折台幣：${twdText}｜報酬率：${privacyMode ? '••••' : fmtPct(c.returnPct)}`;
+}
+function saveRealizedRecord() {
+  const r = getRealizedFormData();
+  if(!r.ticker) { alert('請輸入代號'); return; }
+  if(!r.shares || !r.sellPrice) { alert('請輸入賣出股數與賣出均價'); return; }
+  if(editRealizedIndex >= 0) realizedRecords[editRealizedIndex] = r;
+  else realizedRecords.push(r);
+  saveAll(); hideRealizedForm(); refresh();
+}
+function deleteRealizedRecord() {
+  if(editRealizedIndex < 0) return;
+  if(!confirm('確定刪除此筆已實現損益紀錄？')) return;
+  realizedRecords.splice(editRealizedIndex, 1);
+  saveAll(); hideRealizedForm(); refresh();
+}
+function sortRealizedBy(key) {
+  if(realizedSortKey === key) realizedSortAsc = !realizedSortAsc;
+  else { realizedSortKey = key; realizedSortAsc = key === 'date' ? false : false; }
+  renderRealizedTable();
+}
+function renderRealizedTable() {
+  const tbody = document.getElementById('realized-tbody');
+  if(!tbody) return;
+  const totalAll = totalRealizedTWD();
+  const totalYtd = totalRealizedTWD(new Date().getFullYear());
+  const totalInline = document.getElementById('realized-total-inline');
+  const ytdInline = document.getElementById('realized-ytd-inline');
+  if(totalInline) totalInline.textContent = privacyMode ? 'NT$••••' : (totalAll>=0?'+':'') + fmtTWD(totalAll);
+  if(ytdInline) ytdInline.textContent = privacyMode ? 'NT$••••' : (totalYtd>=0?'+':'') + fmtTWD(totalYtd);
+  if(realizedRecords.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="10" style="color:var(--muted);text-align:center;padding:18px">尚未新增已實現損益紀錄。賣出股票後，可在這裡手動記錄獲利或虧損。</td></tr>`;
+    return;
+  }
+  let rows = realizedRecords.map((r,i)=>{
+    const calc = calcRealized(r);
+    return {...r, idx:i, pnlTwd:calc.pnlTwd, pnlNative:calc.pnlNative, returnPct:calc.returnPct};
+  });
+  rows.sort((a,b)=>{
+    let av=a[realizedSortKey] ?? 0, bv=b[realizedSortKey] ?? 0;
+    if(typeof av === 'string') { av=av.toLowerCase(); bv=String(bv||'').toLowerCase(); }
+    return realizedSortAsc ? (av>bv?1:-1) : (av<bv?1:-1);
+  });
+  tbody.innerHTML = rows.map(r=>{
+    const currency = r.currency === 'USD' ? 'US$' : 'NT$';
+    const pnlCls = r.pnlTwd >= 0 ? 'up' : 'down';
+    const nativeLine = r.currency === 'USD' ? `<br><span style="font-size:11px;color:var(--muted)">${privacyMode ? '+US$••••' : (r.pnlNative>=0?'+':'') + 'US$' + fmtNum(r.pnlNative,2)}</span>` : '';
+    return `<tr>
+      <td>${r.date || ''}</td>
+      <td><strong style="font-weight:500">${r.name || r.ticker}</strong><br><span style="font-size:11px;color:var(--muted)">${r.ticker}</span></td>
+      <td>${marketLabel(r.market)}</td>
+      <td class="num">${displayNumber(r.shares,3)}</td>
+      <td class="num">${displayCurrency(currency, r.sellPrice, 2)}</td>
+      <td class="num" style="color:var(--muted)">${displayCurrency(currency, r.costPrice, 2)}</td>
+      <td class="num ${pnlCls}">${privacyMode ? 'NT$••••' : (r.pnlTwd>=0?'+':'') + fmtTWD(r.pnlTwd)}${nativeLine}</td>
+      <td class="num ${pnlCls}">${displayPctValue(r.returnPct, true)}</td>
+      <td style="color:var(--muted)">${r.note || ''}</td>
+      <td><button class="icon-btn btn-sm" onclick="editRealizedRecord(${r.idx})" title="編輯">✏️</button></td>
+    </tr>`;
+  }).join('');
+}
+function exportRealizedCSV() {
+  const header = ['日期','代號','名稱','市場','幣別','賣出股數','賣出均價','成本均價','手續費稅費','交易匯率','自動損益(原幣)','手動覆蓋損益(原幣)','採用損益(原幣)','採用損益(台幣)','報酬率%','備註'];
+  const rows = realizedRecords.map(r=>{
+    const c = calcRealized(r);
+    return [r.date,r.ticker,r.name,r.market,r.currency,r.shares,r.sellPrice,r.costPrice,r.fees,r.fxRate,fmtNum(c.autoPnl,2),r.overridePnl,fmtNum(c.pnlNative,2),Math.round(c.pnlTwd),fmtNum(c.returnPct,2),r.note];
+  });
+  const csv = [header,...rows].map(r=>r.map(v=>`"${String(v ?? '').replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `realized_pnl_${todayStr()}.csv`;
+  a.click();
 }
 
 // ── Table ────────────────────────────────────────────────────────────
@@ -2061,6 +2397,7 @@ function refresh() {
   updateCharts();
   renderAllocationTargets();
   renderCashTable();
+  renderRealizedTable();
   renderTable();
   updateHistoryChart();
 }
