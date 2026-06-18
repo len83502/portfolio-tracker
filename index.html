@@ -386,7 +386,6 @@
   body.report-mode .holdings-header button,
   body.report-mode .target-settings,
   body.report-mode .target-actions,
-  body.report-mode #realized-panel,
   body.report-mode .history-range-btn,
   body.report-mode .refresh-all-btn,
   body.report-mode #price-status,
@@ -395,6 +394,30 @@
   body.report-mode td:last-child { display:none; }
   body.report-mode header { margin-bottom:20px; }
   body.report-mode .panel, body.report-mode .holdings-panel, body.report-mode .card { box-shadow:none; }
+
+  /* Collapsible sections */
+  .collapsible-panel .holdings-header { cursor: default; }
+  .section-title-row { display:flex; align-items:center; gap:10px; }
+  .collapse-toggle {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    font-family: 'Noto Sans TC', sans-serif;
+    white-space: nowrap;
+  }
+  .collapse-toggle:hover { border-color: var(--accent); color: var(--accent); }
+  .collapse-icon { display:inline-block; margin-right:4px; transition: transform 0.15s; }
+  .collapsible-panel.collapsed .collapse-icon { transform: rotate(-90deg); }
+  .collapsible-panel.collapsed .collapsible-body { display:none; }
+  .collapsible-panel.collapsed { padding-bottom: 16px; }
+  .collapsible-actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .collapsible-panel.collapsed .collapsible-actions { display:none; }
+  body.report-mode .collapse-toggle { display:none !important; }
+  body.report-mode .collapsible-panel.collapsed .collapsible-body { display:block; }
 
 </style>
 </head>
@@ -629,16 +652,52 @@
   <div class="note">※ 台股上市代號加 .TW（如 2330.TW），上櫃加 .TWO（如 6488.TWO）；美股直接輸入代號（如 AAPL、VOO）。啟用 Google Sheets 同步後，台股/美股價格優先由 Google Apps Script 後端抓取，可降低瀏覽器 CORS 或代理服務失效造成的抓價問題。</div>
 </div>
 
-<!-- Cash / Bank accounts -->
-<div class="holdings-panel" id="cash-panel">
+<!-- Holdings table -->
+<div class="holdings-panel collapsible-panel" id="holdings-panel">
   <div class="holdings-header">
-    <div>
-      <div class="panel-title" style="margin:0">現金 / 銀行帳戶</div>
-      <div class="note">現金會納入總資產計算；TWD 直接計入，USD 依上方 USD/TWD 匯率折算台幣。</div>
+    <div class="section-title-row">
+      <button class="collapse-toggle" onclick="toggleSection('holdings-panel')"><span class="collapse-icon">▾</span><span class="collapse-text">收合</span></button>
+      <div class="panel-title" style="margin:0">持倉明細</div>
     </div>
-    <button class="btn-primary" onclick="showCashForm()">＋ 新增現金帳戶</button>
+    <input class="search-box" id="search-box" placeholder="搜尋股票..." oninput="renderTable()">
   </div>
+  <div class="collapsible-body">
+  <table>
+    <thead>
+      <tr>
+        <th onclick="sortBy('name')">名稱 <span id="sort-name"></span></th>
+        <th onclick="sortBy('market')">市場</th>
+        <th class="num" onclick="sortBy('shares')">股數</th>
+        <th class="num" onclick="sortBy('price')">現價</th>
+        <th class="num" onclick="sortBy('cost')">單位成本</th>
+        <th class="num" onclick="sortBy('cost_twd')">總成本（台幣）</th>
+        <th class="num" onclick="sortBy('value_twd')">市值（台幣）</th>
+        <th class="num" onclick="sortBy('unrealized_twd')">未實現損益</th>
+        <th class="num" onclick="sortBy('pnl_pct')">損益%</th>
+        <th class="num" onclick="sortBy('weight')">佔比</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody id="holdings-tbody"></tbody>
+  </table>
+  </div>
+</div>
 
+<!-- Cash / Bank accounts -->
+<div class="holdings-panel collapsible-panel collapsed" id="cash-panel">
+  <div class="holdings-header">
+    <div class="section-title-row">
+      <button class="collapse-toggle" onclick="toggleSection('cash-panel')"><span class="collapse-icon">▾</span><span class="collapse-text">展開</span></button>
+      <div>
+        <div class="panel-title" style="margin:0">現金 / 銀行帳戶</div>
+        <div class="note">現金會納入總資產計算；TWD 直接計入，USD 依上方 USD/TWD 匯率折算台幣。</div>
+      </div>
+    </div>
+    <div class="collapsible-actions">
+      <button class="btn-primary" onclick="showCashForm()">＋ 新增現金帳戶</button>
+    </div>
+  </div>
+  <div class="collapsible-body">
   <div class="edit-panel" id="cash-edit-panel">
     <div class="panel-title" id="cash-form-title">新增現金帳戶</div>
     <div class="form-grid">
@@ -683,21 +742,25 @@
     </thead>
     <tbody id="cash-tbody"></tbody>
   </table>
+  </div>
 </div>
 
 <!-- Realized P&L records -->
-<div class="holdings-panel" id="realized-panel">
+<div class="holdings-panel collapsible-panel collapsed" id="realized-panel">
   <div class="holdings-header">
-    <div>
-      <div class="panel-title" style="margin:0">已實現損益紀錄</div>
-      <div class="note">這是獨立紀錄：不會自動扣持倉，也不會自動增加現金。賣出後請自行調整持倉股數與現金帳戶。</div>
+    <div class="section-title-row">
+      <button class="collapse-toggle" onclick="toggleSection('realized-panel')"><span class="collapse-icon">▾</span><span class="collapse-text">展開</span></button>
+      <div>
+        <div class="panel-title" style="margin:0">已實現損益紀錄</div>
+        <div class="note">這是獨立紀錄：不會自動扣持倉，也不會自動增加現金。賣出後請自行調整持倉股數與現金帳戶。</div>
+      </div>
     </div>
-    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <div class="collapsible-actions">
       <button class="btn-primary" onclick="showRealizedForm()">＋ 新增已實現損益</button>
       <button class="btn-ghost" onclick="exportRealizedCSV()">↓ 匯出紀錄 CSV</button>
     </div>
   </div>
-
+  <div class="collapsible-body">
   <div class="edit-panel" id="realized-edit-panel">
     <div class="panel-title" id="realized-form-title">新增已實現損益</div>
     <div class="form-grid">
@@ -731,7 +794,7 @@
       </div>
       <div class="form-group">
         <label>賣出股數</label>
-        <input id="r-shares" type="number" placeholder="0" step="0.001" oninput="updateRealizedPreview()">
+        <input id="r-shares" type="number" placeholder="0" step="1" oninput="updateRealizedPreview()">
       </div>
       <div class="form-group">
         <label>賣出均價（原幣）</label>
@@ -788,32 +851,7 @@
     </thead>
     <tbody id="realized-tbody"></tbody>
   </table>
-</div>
-
-<!-- Holdings table -->
-<div class="holdings-panel">
-  <div class="holdings-header">
-    <div class="panel-title" style="margin:0">持倉明細</div>
-    <input class="search-box" id="search-box" placeholder="搜尋股票..." oninput="renderTable()">
   </div>
-  <table>
-    <thead>
-      <tr>
-        <th onclick="sortBy('name')">名稱 <span id="sort-name"></span></th>
-        <th onclick="sortBy('market')">市場</th>
-        <th class="num" onclick="sortBy('shares')">股數</th>
-        <th class="num" onclick="sortBy('price')">現價</th>
-        <th class="num" onclick="sortBy('cost')">單位成本</th>
-        <th class="num" onclick="sortBy('cost_twd')">總成本（台幣）</th>
-        <th class="num" onclick="sortBy('value_twd')">市值（台幣）</th>
-        <th class="num" onclick="sortBy('unrealized_twd')">未實現損益</th>
-        <th class="num" onclick="sortBy('pnl_pct')">損益%</th>
-        <th class="num" onclick="sortBy('weight')">佔比</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody id="holdings-tbody"></tbody>
-  </table>
 </div>
 
 <div style="font-size:12px;color:var(--muted);text-align:center;padding:8px 0 4px">
@@ -917,6 +955,32 @@ function displayTWD(n) { return privacyMode ? 'NT$••••' : fmtTWD(n); }
 function displayUSD(n) { return privacyMode ? 'US$••••' : 'US$' + Math.round(n).toLocaleString(); }
 function displayCurrency(prefix, n, digits=2) { return privacyMode ? prefix + '••••' : prefix + fmtNum(n, digits); }
 function displayNumber(n, digits=2) { return privacyMode ? '••••' : fmtNum(n, digits); }
+
+function updateSectionToggle(panelId) {
+  const panel = document.getElementById(panelId);
+  if(!panel) return;
+  const btn = panel.querySelector('.collapse-toggle');
+  if(!btn) return;
+  const txt = btn.querySelector('.collapse-text');
+  if(txt) txt.textContent = panel.classList.contains('collapsed') ? '展開' : '收合';
+}
+function toggleSection(panelId) {
+  const panel = document.getElementById(panelId);
+  if(!panel) return;
+  panel.classList.toggle('collapsed');
+  localStorage.setItem('portfolio_section_' + panelId, panel.classList.contains('collapsed') ? 'collapsed' : 'open');
+  updateSectionToggle(panelId);
+}
+function initCollapsibleSections() {
+  const defaults = { 'holdings-panel':'open', 'cash-panel':'collapsed', 'realized-panel':'collapsed' };
+  Object.keys(defaults).forEach(id => {
+    const panel = document.getElementById(id);
+    if(!panel) return;
+    const saved = localStorage.getItem('portfolio_section_' + id) || defaults[id];
+    panel.classList.toggle('collapsed', saved === 'collapsed');
+    updateSectionToggle(id);
+  });
+}
 function displayPctValue(n, withSign=false) { return privacyMode ? '••••' : (withSign ? fmtPct(n) : fmtNum(n,2) + '%'); }
 function displayWeight(n, digits=1) { return privacyMode ? '••••' : fmtNum(n, digits) + '%'; }
 function isUSDAsset(h) { return h.market==='US' || h.market==='ETF-US'; }
@@ -1304,20 +1368,6 @@ async function loadCloudData(manual=false) {
       balance: parseFloat(c.balance) || 0,
       note: String(c.note || '').trim()
     })).filter(c => c.name);
-    if(Array.isArray(data.realizedRecords)) realizedRecords = data.realizedRecords.map(r => ({
-      date: String(r.date || '').slice(0,10),
-      ticker: String(r.ticker || '').trim().toUpperCase(),
-      name: String(r.name || r.ticker || '').trim(),
-      market: String(r.market || 'TW').trim(),
-      currency: String(r.currency || ((r.market === 'US' || r.market === 'ETF-US') ? 'USD' : 'TWD')).trim().toUpperCase(),
-      shares: parseFloat(r.shares) || 0,
-      sellPrice: parseFloat(r.sellPrice) || 0,
-      costPrice: parseFloat(r.costPrice) || 0,
-      fees: parseFloat(r.fees) || 0,
-      fxRate: parseFloat(r.fxRate) || (((r.market === 'US' || r.market === 'ETF-US') || String(r.currency).toUpperCase()==='USD') ? usdRate : 1),
-      overridePnl: r.overridePnl === '' || r.overridePnl === null || typeof r.overridePnl === 'undefined' ? '' : parseFloat(r.overridePnl),
-      note: String(r.note || '').trim()
-    })).filter(r => r.ticker);
     if(Array.isArray(data.snapshots)) snapshots = data.snapshots.map(s => ({
       date: String(s.date || '').slice(0,10),
       total: Math.round(parseFloat(s.total) || 0),
@@ -1971,7 +2021,7 @@ function renderRealizedTable() {
       <td>${r.date || ''}</td>
       <td><strong style="font-weight:500">${r.name || r.ticker}</strong><br><span style="font-size:11px;color:var(--muted)">${r.ticker}</span></td>
       <td>${marketLabel(r.market)}</td>
-      <td class="num">${displayNumber(r.shares,3)}</td>
+      <td class="num">${displayNumber(r.shares,0)}</td>
       <td class="num">${displayCurrency(currency, r.sellPrice, 2)}</td>
       <td class="num" style="color:var(--muted)">${displayCurrency(currency, r.costPrice, 2)}</td>
       <td class="num ${pnlCls}">${privacyMode ? 'NT$••••' : (r.pnlTwd>=0?'+':'') + fmtTWD(r.pnlTwd)}${nativeLine}</td>
@@ -2407,8 +2457,10 @@ async function initApp() {
   updatePrivacyButton();
   updateReportModeButton();
   refresh();
+  initCollapsibleSections();
   if(cloudEnabled && cloudApiUrl) {
     await loadCloudData(false);
+    initCollapsibleSections();
   }
   autoSnapshotOnLoad();
 }
