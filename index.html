@@ -269,6 +269,13 @@
   .history-range-btn.active, .history-range-btn:hover { border-color: var(--accent); color: var(--accent); }
   .history-empty { text-align: center; color: var(--muted); padding: 40px 0; font-size: 14px; line-height: 2; }
   .snapshot-count { font-size: 13px; color: var(--muted); font-family: 'IBM Plex Mono', monospace; }
+  .history-series-toggle { display:flex; align-items:center; gap:5px; font-size:13px; color:var(--muted); cursor:pointer; user-select:none; }
+  .history-series-toggle input { accent-color: var(--accent); }
+  .history-stats-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap:10px; margin-top:14px; }
+  .history-stat-card { background: var(--bg3); border:1px solid var(--border); border-radius:8px; padding:10px 12px; }
+  .history-stat-label { font-size:12px; color:var(--muted); margin-bottom:4px; }
+  .history-stat-main { font-size:16px; font-weight:500; font-family:'IBM Plex Mono', monospace; }
+  .history-stat-sub { font-size:12px; color:var(--muted); font-family:'IBM Plex Mono', monospace; margin-top:2px; }
 
   .icon-btn {
     background: none;
@@ -587,10 +594,20 @@
       <button class="history-range-btn active" data-range-btn="1" onclick="setRange(30,this)">1個月</button>
       <button class="history-range-btn" data-range-btn="1" onclick="setRange(90,this)">3個月</button>
       <button class="history-range-btn" data-range-btn="1" onclick="setRange(180,this)">6個月</button>
+      <button class="history-range-btn" data-range-btn="1" onclick="setRange(365,this)">1年</button>
+      <button class="history-range-btn" data-range-btn="1" onclick="setRange('ytd',this)">年初至今</button>
       <button class="history-range-btn" data-range-btn="1" onclick="setRange(0,this)">全部</button>
       <button class="refresh-all-btn" onclick="snapshotNow(true)" title="手動記錄今日快照">📌 記錄今日</button>
       <button class="refresh-all-btn" onclick="clearHistory()" title="清除所有歷史紀錄" style="color:var(--danger);border-color:var(--danger)">🗑 清除歷史</button>
     </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:12px">
+    <span style="font-size:13px;color:var(--muted)">顯示項目：</span>
+    <label class="history-series-toggle"><input type="checkbox" data-history-series="total" checked onchange="toggleHistorySeries('total',this)">總資產</label>
+    <label class="history-series-toggle"><input type="checkbox" data-history-series="tw" checked onchange="toggleHistorySeries('tw',this)">台股</label>
+    <label class="history-series-toggle"><input type="checkbox" data-history-series="us" checked onchange="toggleHistorySeries('us',this)">美股</label>
+    <label class="history-series-toggle"><input type="checkbox" data-history-series="cash" checked onchange="toggleHistorySeries('cash',this)">現金</label>
+    <span class="note" id="history-mode-note">比例模式下總資產線會自動隱藏。</span>
   </div>
   <div class="chart-wrap" style="height:260px" id="history-chart-wrap">
     <canvas id="history-chart"></canvas>
@@ -599,6 +616,7 @@
       <span style="font-size:13px">每次開啟網頁時會自動記錄當日快照<br>也可點「記錄今日」立即存入</span>
     </div>
   </div>
+  <div class="history-stats-grid" id="history-stats-grid"></div>
 </div>
 
 <!-- Add/Edit Form -->
@@ -875,6 +893,7 @@ let sortAsc = false;
 let pie1Chart, pie2Chart, pie3Chart, historyChart;
 let historyRangeDays = 30;
 let historyMode = 'amount';
+let historyVisibleSeries = JSON.parse(localStorage.getItem('portfolio_history_visible_series') || '{"total":true,"tw":true,"us":true,"cash":true}');
 let chartViewMode = 'all';
 let privacyMode = localStorage.getItem('portfolio_privacy_mode') === '1';
 let reportMode = localStorage.getItem('portfolio_report_mode') === '1';
@@ -1500,8 +1519,8 @@ function clearHistory() {
   updateHistoryChart();
 }
 
-function setRange(days, btn) {
-  historyRangeDays = days;
+function setRange(range, btn) {
+  historyRangeDays = range;
   document.querySelectorAll('[data-range-btn="1"]').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
   updateHistoryChart();
@@ -1511,10 +1530,104 @@ function setHistoryMode(mode, btn) {
   historyMode = mode === 'ratio' ? 'ratio' : 'amount';
   document.querySelectorAll('[data-history-mode]').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
+  updateHistorySeriesControls();
   updateHistoryChart();
 }
 
+function toggleHistorySeries(key, el) {
+  historyVisibleSeries[key] = !!el.checked;
+  localStorage.setItem('portfolio_history_visible_series', JSON.stringify(historyVisibleSeries));
+  updateHistoryChart();
+}
+
+function updateHistorySeriesControls() {
+  document.querySelectorAll('[data-history-series]').forEach(el => {
+    const key = el.getAttribute('data-history-series');
+    el.checked = historyVisibleSeries[key] !== false;
+    if(key === 'total') {
+      el.disabled = historyMode === 'ratio';
+      el.parentElement.style.opacity = historyMode === 'ratio' ? '0.45' : '1';
+    }
+  });
+  const note = document.getElementById('history-mode-note');
+  if(note) note.textContent = historyMode === 'ratio' ? '比例模式下總資產線會自動隱藏。' : '可單獨選擇要顯示的線條。';
+}
+
+function filterSnapshotsByRange(list) {
+  if(historyRangeDays === 'ytd') {
+    const y = new Date().getFullYear();
+    const start = `${y}-01-01`;
+    return list.filter(s => s.date >= start);
+  }
+  if(Number(historyRangeDays) > 0) {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - Number(historyRangeDays));
+    const cutoffStr = cutoff.toISOString().slice(0,10);
+    return list.filter(s=>s.date>=cutoffStr);
+  }
+  return list;
+}
+
+function normalizeSnapshotRows(list) {
+  return list.map(s => {
+    const total = Math.round(parseFloat(s.total) || 0);
+    const tw = Math.round(parseFloat(s.tw) || 0);
+    const us = Math.round(parseFloat(s.us) || 0);
+    const cash = Number.isFinite(parseFloat(s.cash)) ? Math.round(parseFloat(s.cash)) : Math.max(total - tw - us, 0);
+    return {...s, total, tw, us, cash};
+  });
+}
+
+function fmtSignedPct(v) {
+  if(!Number.isFinite(v)) return '—';
+  return (v>=0?'+':'') + v.toFixed(2) + '%';
+}
+
+function fmtSignedTWD(v) {
+  if(!Number.isFinite(v)) return '—';
+  return (v>=0?'+':'') + fmtTWD(v);
+}
+
+function historyReturn(start, end, key) {
+  const sv = parseFloat(start?.[key]) || 0;
+  const ev = parseFloat(end?.[key]) || 0;
+  const diff = ev - sv;
+  const pct = sv !== 0 ? (diff / sv) * 100 : NaN;
+  return { start: sv, end: ev, diff, pct };
+}
+
+function renderHistoryStats(normalized) {
+  const grid = document.getElementById('history-stats-grid');
+  if(!grid) return;
+  if(normalized.length < 2) {
+    grid.innerHTML = `<div class="history-stat-card"><div class="history-stat-label">本期間變化</div><div class="history-stat-main">資料不足</div><div class="history-stat-sub">至少需要 2 筆快照</div></div>`;
+    return;
+  }
+
+  const start = normalized[0];
+  const end = normalized[normalized.length - 1];
+  const items = [
+    {key:'total', label:'總資產'},
+    {key:'tw', label:'台股'},
+    {key:'us', label:'美股'},
+    {key:'cash', label:'現金'}
+  ];
+  const period = privacyMode ? '期間：•••• ～ ••••' : `期間：${start.date} ～ ${end.date}`;
+  grid.innerHTML = items.map(item => {
+    const r = historyReturn(start, end, item.key);
+    const cls = r.diff >= 0 ? 'up' : 'down';
+    const main = privacyMode ? '••••' : fmtSignedPct(r.pct);
+    const sub = privacyMode ? '金額已隱藏' : `${fmtSignedTWD(r.diff)}｜${fmtTWD(r.start)} → ${fmtTWD(r.end)}`;
+    return `<div class="history-stat-card">
+      <div class="history-stat-label">${item.label}變化</div>
+      <div class="history-stat-main ${cls}">${main}</div>
+      <div class="history-stat-sub">${sub}</div>
+    </div>`;
+  }).join('') + `<div class="history-stat-card"><div class="history-stat-label">統計期間</div><div class="history-stat-main" style="font-size:14px">${period}</div><div class="history-stat-sub">以期間首尾快照計算</div></div>`;
+}
+
 function updateHistoryChart() {
+  updateHistorySeriesControls();
   const count = snapshots.length;
   document.getElementById('snapshot-count').textContent = count > 0 ? (privacyMode ? '共 •••• 筆紀錄' : `共 ${count} 筆紀錄`) : '';
 
@@ -1524,57 +1637,59 @@ function updateHistoryChart() {
   if(count === 0) {
     emptyEl.style.display = 'block';
     canvasEl.style.display = 'none';
+    const grid = document.getElementById('history-stats-grid');
+    if(grid) grid.innerHTML = '';
     if(historyChart) { historyChart.destroy(); historyChart=null; }
     return;
   }
   emptyEl.style.display = 'none';
   canvasEl.style.display = 'block';
 
-  let filtered = [...snapshots];
-  if(historyRangeDays > 0) {
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - historyRangeDays);
-    const cutoffStr = cutoff.toISOString().slice(0,10);
-    filtered = filtered.filter(s=>s.date>=cutoffStr);
-  }
+  let filtered = filterSnapshotsByRange([...snapshots]);
   if(filtered.length===0) filtered = snapshots.slice(-1);
 
-  const normalized = filtered.map(s => {
-    const total = Math.round(parseFloat(s.total) || 0);
-    const tw = Math.round(parseFloat(s.tw) || 0);
-    const us = Math.round(parseFloat(s.us) || 0);
-    const cash = Number.isFinite(parseFloat(s.cash)) ? Math.round(parseFloat(s.cash)) : Math.max(total - tw - us, 0);
-    return {...s, total, tw, us, cash};
-  });
-
+  const normalized = normalizeSnapshotRows(filtered);
   const labels = normalized.map(s=>{
     const [y,m,d] = s.date.split('-');
     return `${m}/${d}`;
   });
 
+  renderHistoryStats(normalized);
+
   const baseLine = { backgroundColor:'transparent', fill:false, tension:0.3, borderWidth:1.6, borderDash:[4,3], pointRadius:0, pointHoverRadius:4 };
-  let datasets;
+  const addSeries = (key, label, color, extra={}) => historyVisibleSeries[key] !== false ? [{ key, label, color, extra }] : [];
+  let specs = [];
   let yTickCallback;
   let tooltipLabel;
 
   if(historyMode === 'ratio') {
-    datasets = [
-      { label:'台股持倉 %', data: normalized.map(s=>s.total>0 ? s.tw/s.total*100 : 0), borderColor:'#4ea8e8', ...baseLine },
-      { label:'美股持倉 %', data: normalized.map(s=>s.total>0 ? s.us/s.total*100 : 0), borderColor:'#f9a84b', ...baseLine },
-      { label:'現金 %', data: normalized.map(s=>s.total>0 ? s.cash/s.total*100 : 0), borderColor:'#3dcfb0', ...baseLine }
+    specs = [
+      ...addSeries('tw', '台股持倉 %', '#4ea8e8'),
+      ...addSeries('us', '美股持倉 %', '#f9a84b'),
+      ...addSeries('cash', '現金 %', '#3dcfb0')
     ];
     yTickCallback = v => privacyMode ? '••••' : v.toFixed(0) + '%';
     tooltipLabel = ctx => privacyMode ? ` ${ctx.dataset.label}: 已隱藏` : ` ${ctx.dataset.label}: ${ctx.parsed.y.toFixed(2)}%`;
   } else {
-    datasets = [
-      { label:'總資產', data: normalized.map(s=>s.total), borderColor:'#7c6dfa', backgroundColor:'rgba(124,109,250,0.08)', fill:true, tension:0.3, borderWidth:2.5, pointRadius:normalized.length>60?0:3, pointHoverRadius:5 },
-      { label:'台股持倉', data: normalized.map(s=>s.tw), borderColor:'#4ea8e8', ...baseLine },
-      { label:'美股持倉', data: normalized.map(s=>s.us), borderColor:'#f9a84b', ...baseLine },
-      { label:'現金', data: normalized.map(s=>s.cash), borderColor:'#3dcfb0', ...baseLine }
+    specs = [
+      ...addSeries('total', '總資產', '#7c6dfa', { backgroundColor:'rgba(124,109,250,0.08)', fill:true, borderWidth:2.5, pointRadius:normalized.length>60?0:3, pointHoverRadius:5, borderDash:undefined }),
+      ...addSeries('tw', '台股持倉', '#4ea8e8'),
+      ...addSeries('us', '美股持倉', '#f9a84b'),
+      ...addSeries('cash', '現金', '#3dcfb0')
     ];
     yTickCallback = v => privacyMode ? '••••' : 'NT$' + (v>=1000000 ? (v/1000000).toFixed(1)+'M' : (v/1000).toFixed(0)+'K');
     tooltipLabel = ctx => privacyMode ? ` ${ctx.dataset.label}: 已隱藏` : ` ${ctx.dataset.label}: NT$${Math.round(ctx.parsed.y).toLocaleString()}`;
   }
+
+  const datasets = specs.map(spec => {
+    const data = historyMode === 'ratio'
+      ? normalized.map(s=>s.total>0 ? s[spec.key]/s.total*100 : 0)
+      : normalized.map(s=>s[spec.key]);
+    const common = spec.key === 'total' && historyMode === 'amount'
+      ? { label: spec.label, data, borderColor:spec.color, backgroundColor:'rgba(124,109,250,0.08)', fill:true, tension:0.3, borderWidth:2.5, pointRadius:normalized.length>60?0:3, pointHoverRadius:5 }
+      : { label: spec.label, data, borderColor:spec.color, ...baseLine };
+    return common;
+  });
 
   if(historyChart) historyChart.destroy();
   historyChart = new Chart(document.getElementById('history-chart'), {
