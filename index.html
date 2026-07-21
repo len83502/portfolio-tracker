@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>投資組合追蹤器｜Google Sheets 同步版</title>
+<title>投資組合追蹤器｜手機友善版</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
@@ -425,6 +425,210 @@
   .collapsible-panel.collapsed .collapsible-actions { display:none; }
   body.report-mode .collapse-toggle { display:none !important; }
   body.report-mode .collapsible-panel.collapsed .collapsible-body { display:block; }
+
+
+
+  /* Mobile responsive enhancements - V8.11 */
+  .desktop-scroll-hint { display:none; }
+  @media (max-width: 760px) {
+    body {
+      padding: 12px;
+      font-size: 14px;
+      -webkit-text-size-adjust: 100%;
+    }
+    header {
+      display: block;
+      margin-bottom: 16px;
+      padding-bottom: 14px;
+    }
+    header h1 { font-size: 22px; line-height: 1.25; }
+    header .meta {
+      text-align: left;
+      margin-top: 10px;
+      font-size: 13px;
+      line-height: 1.7;
+    }
+    .summary-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .card {
+      padding: 12px;
+      border-radius: 12px;
+    }
+    .card-label { font-size: 11px; letter-spacing: 0.04em; }
+    .card-value { font-size: 20px; line-height: 1.25; }
+    .card-sub { font-size: 12px; word-break: break-word; }
+    .rate-bar,
+    .cloud-panel,
+    .target-panel {
+      padding: 12px;
+      gap: 8px;
+      align-items: stretch;
+    }
+    .rate-bar input,
+    .rate-input,
+    .token-input,
+    .cloud-url-input,
+    .search-box {
+      width: 100% !important;
+      min-height: 42px;
+      font-size: 16px;
+    }
+    .action-row,
+    .btn-row,
+    .collapsible-actions,
+    .history-control-row,
+    .chart-toggle-row,
+    .history-series-row {
+      gap: 8px !important;
+    }
+    button,
+    .btn-primary,
+    .btn-ghost,
+    .btn-danger,
+    .refresh-all-btn,
+    .history-range-btn,
+    .collapse-toggle {
+      min-height: 42px;
+      padding: 9px 12px;
+      font-size: 14px;
+      border-radius: 9px;
+    }
+    .btn-sm { min-height: 36px; padding: 7px 10px; }
+    .main-grid,
+    .chart-grid {
+      grid-template-columns: 1fr !important;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .panel,
+    .holdings-panel {
+      padding: 14px;
+      border-radius: 12px;
+      margin-bottom: 14px;
+    }
+    .panel-title {
+      font-size: 13px;
+      margin-bottom: 12px;
+      align-items: flex-start;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .chart-wrap { height: 250px; }
+    #history-chart-wrap { height: 280px !important; }
+    .history-stats-grid {
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .history-stat-card { padding: 9px; }
+    .history-stat-main { font-size: 14px; }
+    .holdings-header {
+      align-items: stretch;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .section-title-row {
+      width: 100%;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: flex-start;
+    }
+    .collapsible-actions {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 1fr;
+    }
+    .collapsible-actions button { width: 100%; }
+    .form-grid { grid-template-columns: 1fr; }
+    .form-group input,
+    .form-group select {
+      min-height: 42px;
+      font-size: 16px;
+    }
+
+    /* Mobile card tables */
+    .collapsible-body > table,
+    .holdings-panel table {
+      display: block;
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+    }
+    .collapsible-body > table thead,
+    .holdings-panel table thead {
+      display: none;
+    }
+    .collapsible-body > table tbody,
+    .holdings-panel table tbody {
+      display: block;
+      width: 100%;
+    }
+    .collapsible-body > table tr,
+    .holdings-panel table tr {
+      display: block;
+      background: rgba(31,31,37,0.72);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 8px 10px;
+      margin-bottom: 10px;
+    }
+    .collapsible-body > table tr:hover td,
+    .holdings-panel table tr:hover td { background: transparent; }
+    .collapsible-body > table td,
+    .holdings-panel table td {
+      display: grid;
+      grid-template-columns: minmax(90px, 35%) 1fr;
+      gap: 10px;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(42,42,53,0.55);
+      text-align: right;
+      word-break: break-word;
+    }
+    .collapsible-body > table td:last-child,
+    .holdings-panel table td:last-child { border-bottom: none; }
+    .collapsible-body > table td::before,
+    .holdings-panel table td::before {
+      content: attr(data-label);
+      color: var(--muted);
+      font-size: 12px;
+      text-align: left;
+      letter-spacing: 0.03em;
+    }
+    .collapsible-body > table td:first-child,
+    .holdings-panel table td:first-child {
+      grid-template-columns: 1fr;
+      text-align: left;
+      padding-top: 2px;
+    }
+    .collapsible-body > table td:first-child::before,
+    .holdings-panel table td:first-child::before { display:none; }
+    .num { text-align: right; }
+    .bar-bg { width: 70px; }
+    .icon-btn { min-width: 38px; min-height: 36px; }
+    body.report-mode .collapsible-body > table td,
+    body.report-mode .holdings-panel table td { grid-template-columns: minmax(90px, 35%) 1fr; }
+  }
+
+  @media (max-width: 420px) {
+    body { padding: 10px; }
+    .summary-grid { grid-template-columns: 1fr; }
+    .card-value { font-size: 22px; }
+    .history-stats-grid { grid-template-columns: 1fr; }
+    .chart-wrap { height: 230px; }
+    #history-chart-wrap { height: 260px !important; }
+    .collapsible-body > table td,
+    .holdings-panel table td {
+      grid-template-columns: 1fr;
+      text-align: left;
+      gap: 4px;
+    }
+    .collapsible-body > table td::before,
+    .holdings-panel table td::before { text-align:left; }
+    .num { text-align: left; }
+  }
 
 </style>
 </head>
@@ -1954,13 +2158,13 @@ function renderCashTable() {
     const twd = cashValueInTWD(c);
     const wt = total > 0 ? (twd / total) * 100 : 0;
     return `<tr>
-      <td><strong style="font-weight:500">${c.name || '未命名'}</strong></td>
-      <td><span class="badge ${currency==='USD' ? 'badge-us' : 'badge-tw'}">${currency}</span></td>
-      <td class="num">${privacyMode ? (currency === 'USD' ? 'US$••••' : 'NT$••••') : (currency === 'USD' ? 'US$' : 'NT$') + amount.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})}</td>
-      <td class="num"><strong style="font-weight:500">${displayTWD(twd)}</strong></td>
-      <td class="num">${displayWeight(wt,1)}</td>
-      <td style="color:var(--muted)">${c.note || ''}</td>
-      <td><button class="icon-btn btn-sm" onclick="editCashAccount(${i})" title="編輯">✏️</button></td>
+      <td data-label="帳戶名稱"><strong style="font-weight:500">${c.name || '未命名'}</strong></td>
+      <td data-label="幣別"><span class="badge ${currency==='USD' ? 'badge-us' : 'badge-tw'}">${currency}</span></td>
+      <td data-label="金額" class="num">${privacyMode ? (currency === 'USD' ? 'US$••••' : 'NT$••••') : (currency === 'USD' ? 'US$' : 'NT$') + amount.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+      <td data-label="折台幣金額" class="num"><strong style="font-weight:500">${displayTWD(twd)}</strong></td>
+      <td data-label="總資產佔比" class="num">${displayWeight(wt,1)}</td>
+      <td data-label="備註" style="color:var(--muted)">${c.note || ''}</td>
+      <td data-label="操作"><button class="icon-btn btn-sm" onclick="editCashAccount(${i})" title="編輯">✏️</button></td>
     </tr>`;
   }).join('');
 }
@@ -2133,16 +2337,16 @@ function renderRealizedTable() {
     const pnlCls = r.pnlTwd >= 0 ? 'up' : 'down';
     const nativeLine = r.currency === 'USD' ? `<br><span style="font-size:11px;color:var(--muted)">${privacyMode ? '+US$••••' : (r.pnlNative>=0?'+':'') + 'US$' + fmtNum(r.pnlNative,2)}</span>` : '';
     return `<tr>
-      <td>${r.date || ''}</td>
-      <td><strong style="font-weight:500">${r.name || r.ticker}</strong><br><span style="font-size:11px;color:var(--muted)">${r.ticker}</span></td>
-      <td>${marketLabel(r.market)}</td>
-      <td class="num">${displayNumber(r.shares,0)}</td>
-      <td class="num">${displayCurrency(currency, r.sellPrice, 2)}</td>
-      <td class="num" style="color:var(--muted)">${displayCurrency(currency, r.costPrice, 2)}</td>
-      <td class="num ${pnlCls}">${privacyMode ? 'NT$••••' : (r.pnlTwd>=0?'+':'') + fmtTWD(r.pnlTwd)}${nativeLine}</td>
-      <td class="num ${pnlCls}">${displayPctValue(r.returnPct, true)}</td>
-      <td style="color:var(--muted)">${r.note || ''}</td>
-      <td><button class="icon-btn btn-sm" onclick="editRealizedRecord(${r.idx})" title="編輯">✏️</button></td>
+      <td data-label="日期">${r.date || ''}</td>
+      <td data-label="名稱"><strong style="font-weight:500">${r.name || r.ticker}</strong><br><span style="font-size:11px;color:var(--muted)">${r.ticker}</span></td>
+      <td data-label="市場">${marketLabel(r.market)}</td>
+      <td data-label="賣出股數" class="num">${displayNumber(r.shares,0)}</td>
+      <td data-label="賣出均價" class="num">${displayCurrency(currency, r.sellPrice, 2)}</td>
+      <td data-label="成本均價" class="num" style="color:var(--muted)">${displayCurrency(currency, r.costPrice, 2)}</td>
+      <td data-label="已實現損益" class="num ${pnlCls}">${privacyMode ? 'NT$••••' : (r.pnlTwd>=0?'+':'') + fmtTWD(r.pnlTwd)}${nativeLine}</td>
+      <td data-label="報酬率" class="num ${pnlCls}">${displayPctValue(r.returnPct, true)}</td>
+      <td data-label="備註" style="color:var(--muted)">${r.note || ''}</td>
+      <td data-label="操作"><button class="icon-btn btn-sm" onclick="editRealizedRecord(${r.idx})" title="編輯">✏️</button></td>
     </tr>`;
   }).join('');
 }
@@ -2195,20 +2399,20 @@ function renderTable() {
     const barW = Math.min(wt*3, 80);
     const currency = (h.market==='US'||h.market==='ETF-US') ? 'US$' : 'NT$';
     return `<tr>
-      <td><strong style="font-weight:500">${h.name||h.ticker}</strong><br><span style="font-size:11px;color:var(--muted)">${h.ticker}</span></td>
-      <td>${marketLabel(h.market)}</td>
-      <td class="num">${displayNumber(h.shares,3)}</td>
-      <td class="num">${displayCurrency(currency, h.price, 2)}</td>
-      <td class="num" style="color:var(--muted)">${displayCurrency(currency, h.cost, 2)}</td>
-      <td class="num" style="color:var(--muted)">${displayTWD(h.cost_twd)}</td>
-      <td class="num"><strong style="font-weight:500">${displayTWD(h.value_twd)}</strong></td>
-      <td class="num">${displayUnrealizedCell(h)}</td>
-      <td class="num ${pnl>=0?'up':'down'}">${displayPctValue(pnl, true)}</td>
-      <td class="num">
+      <td data-label="名稱"><strong style="font-weight:500">${h.name||h.ticker}</strong><br><span style="font-size:11px;color:var(--muted)">${h.ticker}</span></td>
+      <td data-label="市場">${marketLabel(h.market)}</td>
+      <td data-label="股數" class="num">${displayNumber(h.shares,3)}</td>
+      <td data-label="現價" class="num">${displayCurrency(currency, h.price, 2)}</td>
+      <td data-label="單位成本" class="num" style="color:var(--muted)">${displayCurrency(currency, h.cost, 2)}</td>
+      <td data-label="總成本（台幣）" class="num" style="color:var(--muted)">${displayTWD(h.cost_twd)}</td>
+      <td data-label="市值（台幣）" class="num"><strong style="font-weight:500">${displayTWD(h.value_twd)}</strong></td>
+      <td data-label="未實現損益" class="num">${displayUnrealizedCell(h)}</td>
+      <td data-label="損益%" class="num ${pnl>=0?'up':'down'}">${displayPctValue(pnl, true)}</td>
+      <td data-label="佔比" class="num">
         <span style="font-size:11px;margin-right:4px">${displayWeight(wt,1)}</span>
         <span class="bar-bg"><span class="bar-fill" style="width:${barW}px"></span></span>
       </td>
-      <td>
+      <td data-label="操作">
         <button class="icon-btn btn-sm" onclick="editHolding(${h.idx})" title="編輯">✏️</button>
         <button class="icon-btn btn-sm" onclick="refreshPrice(${h.idx})" title="更新價格">↻</button>
       </td>
