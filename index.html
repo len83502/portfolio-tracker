@@ -638,7 +638,7 @@
 <header>
   <div>
     <h1>📊 投資組合追蹤器</h1>
-    <div style="font-size:13px;color:var(--muted);margin-top:4px;">個人資產管理儀表板｜V8.13 AI Agent Ready｜Google Sheets 同步版</div>
+    <div style="font-size:13px;color:var(--muted);margin-top:4px;">V8.13</div>
   </div>
   <div class="meta">
     資料日期：<span id="today-date"></span><br>
@@ -660,22 +660,6 @@
     <button class="btn-ghost btn-sm" onclick="clearCloudToken()">清除安全碼</button>
     <button class="btn-danger btn-sm" onclick="disconnectCloud()">關閉同步</button>
     <span class="sync-status" id="sync-status">目前：本機模式</span>
-  </div>
-  <div class="sync-help">
-    第一次使用：先貼上 Web App URL 與同步安全碼 Token。Token 只會儲存在目前瀏覽器，不會寫進 GitHub HTML；每台新裝置第一次使用時需輸入一次。
-  </div>
-</div>
-
-<!-- AI Agent readiness -->
-<div class="sync-panel" id="ai-agent-panel" style="border-color:rgba(61,207,176,0.45);background:linear-gradient(135deg,rgba(61,207,176,0.08),rgba(124,109,250,0.05));">
-  <div class="sync-row">
-    <span class="sync-title">🧠 ChatGPT 資產管理 Agent</span>
-    <span class="sync-status ok">V8.13：AI 資料格式已就緒</span>
-    <button class="btn-ghost btn-sm" onclick="exportAIAssetJSON()">匯出 Agent JSON</button>
-  </div>
-  <div class="sync-help">
-    本版會把總資產、持倉、現金、已實現損益、歷史快照與資產配置目標整理成結構化 JSON。
-    目前仍保留 CSV 備援；未來接上 ChatGPT 自訂 MCP/App 後，可直接由 ChatGPT 讀取雲端最新資料，不需再手動上傳。
   </div>
 </div>
 
@@ -717,9 +701,14 @@
     <div class="card-sub" id="us-pct">占比 —</div>
   </div>
   <div class="card">
-    <div class="card-label">未實現損益</div>
-    <div class="card-value" id="unrealized-pnl">—</div>
-    <div class="card-sub" id="unrealized-pct">報酬率 —</div>
+    <div class="card-label">台股未實現損益</div>
+    <div class="card-value" id="tw-unrealized-pnl">—</div>
+    <div class="card-sub" id="tw-unrealized-pct">報酬率 —</div>
+  </div>
+  <div class="card">
+    <div class="card-label">美股未實現損益</div>
+    <div class="card-value" id="us-unrealized-pnl">—</div>
+    <div class="card-sub" id="us-unrealized-pct">報酬率 —</div>
   </div>
   <div class="card">
     <div class="card-label">已實現損益</div>
@@ -824,7 +813,11 @@
     <label class="history-series-toggle"><input type="checkbox" data-history-series="tw" checked onchange="toggleHistorySeries('tw',this)">台股</label>
     <label class="history-series-toggle"><input type="checkbox" data-history-series="us" checked onchange="toggleHistorySeries('us',this)">美股</label>
     <label class="history-series-toggle"><input type="checkbox" data-history-series="cash" checked onchange="toggleHistorySeries('cash',this)">現金</label>
-    <span class="note" id="history-mode-note">比例模式下總資產線會自動隱藏。</span>
+    <span style="width:1px;height:18px;background:var(--border);display:inline-block;margin:0 2px"></span>
+    <label class="history-series-toggle"><input type="checkbox" data-history-series="unrealized" onchange="toggleHistorySeries('unrealized',this)">未實現損益</label>
+    <label class="history-series-toggle"><input type="checkbox" data-history-series="twUnrealized" onchange="toggleHistorySeries('twUnrealized',this)">台股未實現</label>
+    <label class="history-series-toggle"><input type="checkbox" data-history-series="usUnrealized" onchange="toggleHistorySeries('usUnrealized',this)">美股未實現</label>
+    <span class="note" id="history-mode-note">比例模式下總資產與未實現損益線會自動隱藏。</span>
   </div>
   <div class="chart-wrap" style="height:260px" id="history-chart-wrap">
     <canvas id="history-chart"></canvas>
@@ -840,8 +833,7 @@
 <div class="action-row" style="margin-bottom:16px">
   <button class="btn-primary" onclick="showAddForm()">＋ 新增持倉</button>
   <button class="btn-ghost" onclick="exportCSV()">↓ 匯出持倉CSV</button>
-  <button class="btn-ghost" onclick="exportAIAssetCSV()">🤖 匯出資產明細AI用CSV</button>
-   <button class="btn-ghost" onclick="exportAIAssetJSON()">🧠 匯出 AI Agent JSON</button>
+  <button class="btn-ghost" onclick="exportAIAssetCSV()">匯出資產明細 CSV</button>
   <button class="btn-ghost" onclick="importFromExcel()">↑ 貼上數據</button>
   <button class="btn-ghost" onclick="resetToLatest()" title="清除舊資料，重新載入截圖中的持倉">🔄 重置持倉</button>
   <span style="font-size:12px;color:var(--muted)">資料自動儲存在瀏覽器本地端</span>
@@ -896,7 +888,16 @@
       <button class="collapse-toggle" onclick="toggleSection('holdings-panel')"><span class="collapse-icon">▾</span><span class="collapse-text">收合</span></button>
       <div class="panel-title" style="margin:0">持倉明細</div>
     </div>
-    <input class="search-box" id="search-box" placeholder="搜尋股票..." oninput="renderTable()">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <select class="search-box" id="market-filter" style="width:auto;min-width:120px" onchange="renderTable()">
+        <option value="">全部市場</option>
+        <option value="TW">台股</option>
+        <option value="ETF-TW">台灣 ETF</option>
+        <option value="US">美股</option>
+        <option value="ETF-US">美國 ETF</option>
+      </select>
+      <input class="search-box" id="search-box" placeholder="搜尋股票..." oninput="renderTable()">
+    </div>
   </div>
   <div class="collapsible-body">
   <table>
@@ -927,7 +928,6 @@
       <button class="collapse-toggle" onclick="toggleSection('cash-panel')"><span class="collapse-icon">▾</span><span class="collapse-text">展開</span></button>
       <div>
         <div class="panel-title" style="margin:0">現金 / 銀行帳戶</div>
-        <div class="note">現金會納入總資產計算；TWD 直接計入，USD 依上方 USD/TWD 匯率折算台幣。</div>
       </div>
     </div>
     <div class="collapsible-actions">
@@ -989,7 +989,6 @@
       <button class="collapse-toggle" onclick="toggleSection('realized-panel')"><span class="collapse-icon">▾</span><span class="collapse-text">展開</span></button>
       <div>
         <div class="panel-title" style="margin:0">已實現損益紀錄</div>
-        <div class="note">這是獨立紀錄：不會自動扣持倉，也不會自動增加現金。賣出後請自行調整持倉股數與現金帳戶。</div>
       </div>
     </div>
     <div class="collapsible-actions">
@@ -1114,7 +1113,7 @@ let sortAsc = false;
 let pie1Chart, pie2Chart, pie3Chart, historyChart;
 let historyRangeDays = 30;
 let historyMode = 'amount';
-let historyVisibleSeries = JSON.parse(localStorage.getItem('portfolio_history_visible_series') || '{"total":true,"tw":true,"us":true,"cash":true}');
+let historyVisibleSeries = JSON.parse(localStorage.getItem('portfolio_history_visible_series') || '{"total":true,"tw":true,"us":true,"cash":true,"unrealized":false,"twUnrealized":false,"usUnrealized":false}');
 let chartViewMode = 'all';
 let privacyMode = localStorage.getItem('portfolio_privacy_mode') === '1';
 let reportMode = localStorage.getItem('portfolio_report_mode') === '1';
@@ -1628,6 +1627,9 @@ async function loadCloudData(manual=false) {
       tw: Math.round(parseFloat(s.tw) || 0),
       us: Math.round(parseFloat(s.us) || 0),
       cash: Math.round(parseFloat(s.cash) || Math.max((parseFloat(s.total)||0) - (parseFloat(s.tw)||0) - (parseFloat(s.us)||0), 0)),
+      unrealized: Number.isFinite(parseFloat(s.unrealized)) ? Math.round(parseFloat(s.unrealized)) : null,
+      twUnrealized: Number.isFinite(parseFloat(s.twUnrealized)) ? Math.round(parseFloat(s.twUnrealized)) : null,
+      usUnrealized: Number.isFinite(parseFloat(s.usUnrealized)) ? Math.round(parseFloat(s.usUnrealized)) : null,
       usdRate: parseFloat(s.usdRate) || usdRate
     })).filter(s => s.date);
     if(data.usdRate) usdRate = parseFloat(data.usdRate) || usdRate;
@@ -1726,8 +1728,11 @@ function snapshotNow(manual=false) {
   const us = holdings.filter(h=>h.market==='US'||h.market==='ETF-US').reduce((s,h)=>s+valueInTWD(h),0);
   const cash = totalCashTWD();
   const total = tw + us + cash;
+  const twUnrealized = holdings.filter(h=>h.market==='TW'||h.market==='ETF-TW').reduce((s,h)=>s+unrealizedTWD(h),0);
+  const usUnrealized = holdings.filter(h=>h.market==='US'||h.market==='ETF-US').reduce((s,h)=>s+unrealizedTWD(h),0);
+  const unrealized = twUnrealized + usUnrealized;
   const existing = snapshots.findIndex(s=>s.date===dateKey);
-  const snap = { date: dateKey, total: Math.round(total), tw: Math.round(tw), us: Math.round(us), cash: Math.round(cash), usdRate };
+  const snap = { date: dateKey, total: Math.round(total), tw: Math.round(tw), us: Math.round(us), cash: Math.round(cash), unrealized: Math.round(unrealized), twUnrealized: Math.round(twUnrealized), usUnrealized: Math.round(usUnrealized), usdRate };
   if(existing>=0) {
     if(manual || confirm(`今天（${dateKey}）已有快照，是否覆蓋？`)) {
       snapshots[existing] = snap;
@@ -1779,13 +1784,13 @@ function updateHistorySeriesControls() {
   document.querySelectorAll('[data-history-series]').forEach(el => {
     const key = el.getAttribute('data-history-series');
     el.checked = historyVisibleSeries[key] !== false;
-    if(key === 'total') {
+    if(key === 'total' || key === 'unrealized' || key === 'twUnrealized' || key === 'usUnrealized') {
       el.disabled = historyMode === 'ratio';
       el.parentElement.style.opacity = historyMode === 'ratio' ? '0.45' : '1';
     }
   });
   const note = document.getElementById('history-mode-note');
-  if(note) note.textContent = historyMode === 'ratio' ? '比例模式下總資產線會自動隱藏。' : '可單獨選擇要顯示的線條。';
+  if(note) note.textContent = historyMode === 'ratio' ? '比例模式下總資產與未實現損益線會自動隱藏。' : '可單獨選擇要顯示的線條。';
 }
 
 function filterSnapshotsByRange(list) {
@@ -1809,7 +1814,10 @@ function normalizeSnapshotRows(list) {
     const tw = Math.round(parseFloat(s.tw) || 0);
     const us = Math.round(parseFloat(s.us) || 0);
     const cash = Number.isFinite(parseFloat(s.cash)) ? Math.round(parseFloat(s.cash)) : Math.max(total - tw - us, 0);
-    return {...s, total, tw, us, cash};
+    const unrealized = Number.isFinite(parseFloat(s.unrealized)) ? Math.round(parseFloat(s.unrealized)) : null;
+    const twUnrealized = Number.isFinite(parseFloat(s.twUnrealized)) ? Math.round(parseFloat(s.twUnrealized)) : null;
+    const usUnrealized = Number.isFinite(parseFloat(s.usUnrealized)) ? Math.round(parseFloat(s.usUnrealized)) : null;
+    return {...s, total, tw, us, cash, unrealized, twUnrealized, usUnrealized};
   });
 }
 
@@ -1910,7 +1918,10 @@ function updateHistoryChart() {
       ...addSeries('total', '總資產', '#7c6dfa', { backgroundColor:'rgba(124,109,250,0.08)', fill:true, borderWidth:2.5, pointRadius:normalized.length>60?0:3, pointHoverRadius:5, borderDash:undefined }),
       ...addSeries('tw', '台股持倉', '#4ea8e8'),
       ...addSeries('us', '美股持倉', '#f9a84b'),
-      ...addSeries('cash', '現金', '#3dcfb0')
+      ...addSeries('cash', '現金', '#3dcfb0'),
+      ...addSeries('unrealized', '未實現損益', '#f06070'),
+      ...addSeries('twUnrealized', '台股未實現', '#60c0f0'),
+      ...addSeries('usUnrealized', '美股未實現', '#f0a060')
     ];
     yTickCallback = v => privacyMode ? '••••' : 'NT$' + (v>=1000000 ? (v/1000000).toFixed(1)+'M' : (v/1000).toFixed(0)+'K');
     tooltipLabel = ctx => privacyMode ? ` ${ctx.dataset.label}: 已隱藏` : ` ${ctx.dataset.label}: NT$${Math.round(ctx.parsed.y).toLocaleString()}`;
@@ -1919,7 +1930,7 @@ function updateHistoryChart() {
   const datasets = specs.map(spec => {
     const data = historyMode === 'ratio'
       ? normalized.map(s=>s.total>0 ? s[spec.key]/s.total*100 : 0)
-      : normalized.map(s=>s[spec.key]);
+      : normalized.map(s=>s[spec.key] === null || typeof s[spec.key] === 'undefined' ? null : s[spec.key]);
     const common = spec.key === 'total' && historyMode === 'amount'
       ? { label: spec.label, data, borderColor:spec.color, backgroundColor:'rgba(124,109,250,0.08)', fill:true, tension:0.3, borderWidth:2.5, pointRadius:normalized.length>60?0:3, pointHoverRadius:5 }
       : { label: spec.label, data, borderColor:spec.color, ...baseLine };
@@ -1967,8 +1978,14 @@ function updateSummary() {
   const totalCost = holdingsCostTWD();
   const tw = holdings.filter(h=>h.market==='TW'||h.market==='ETF-TW').reduce((s,h)=>s+valueInTWD(h),0);
   const us = holdings.filter(h=>h.market==='US'||h.market==='ETF-US').reduce((s,h)=>s+valueInTWD(h),0);
-  const pnl = holdingsTotal - totalCost;
-  const pnlPct = totalCost > 0 ? (pnl/totalCost)*100 : 0;
+  const twHoldings = holdings.filter(h=>h.market==='TW'||h.market==='ETF-TW');
+  const usHoldings = holdings.filter(h=>h.market==='US'||h.market==='ETF-US');
+  const twUnrealized = twHoldings.reduce((s,h)=>s+unrealizedTWD(h),0);
+  const usUnrealized = usHoldings.reduce((s,h)=>s+unrealizedTWD(h),0);
+  const twCost = twHoldings.reduce((s,h)=>s+costInTWD(h),0);
+  const usCost = usHoldings.reduce((s,h)=>s+costInTWD(h),0);
+  const twUnrealizedPct = twCost > 0 ? (twUnrealized/twCost)*100 : 0;
+  const usUnrealizedPct = usCost > 0 ? (usUnrealized/usCost)*100 : 0;
   const realizedAll = totalRealizedTWD();
   const realizedYtd = totalRealizedTWD(new Date().getFullYear());
 
@@ -1981,10 +1998,14 @@ function updateSummary() {
   document.getElementById('us-total').textContent = displayTWD(us);
   document.getElementById('us-pct').textContent = privacyMode ? '佔比 ••••' : '佔比 ' + (total > 0 ? fmtNum(us/total*100) : '0.00')+'%';
 
-  const pnlEl = document.getElementById('unrealized-pnl');
-  pnlEl.textContent = privacyMode ? 'NT$••••' : (pnl>=0?'+':'')+fmtTWD(pnl);
-  pnlEl.className = 'card-value ' + (pnl>=0?'up':'down');
-  document.getElementById('unrealized-pct').textContent = privacyMode ? '報酬率 ••••' : '報酬率 '+fmtPct(pnlPct);
+  const twPnlEl = document.getElementById('tw-unrealized-pnl');
+  twPnlEl.textContent = privacyMode ? 'NT$••••' : (twUnrealized>=0?'+':'')+fmtTWD(twUnrealized);
+  twPnlEl.className = 'card-value ' + (twUnrealized>=0?'up':'down');
+  document.getElementById('tw-unrealized-pct').textContent = privacyMode ? '報酬率 ••••' : '報酬率 '+fmtPct(twUnrealizedPct);
+  const usPnlEl = document.getElementById('us-unrealized-pnl');
+  usPnlEl.textContent = privacyMode ? 'NT$••••' : (usUnrealized>=0?'+':'')+fmtTWD(usUnrealized);
+  usPnlEl.className = 'card-value ' + (usUnrealized>=0?'up':'down');
+  document.getElementById('us-unrealized-pct').textContent = privacyMode ? '報酬率 ••••' : '報酬率 '+fmtPct(usUnrealizedPct);
   const realizedEl = document.getElementById('realized-pnl');
   if(realizedEl) {
     realizedEl.textContent = privacyMode ? 'NT$••••' : (realizedYtd>=0?'+':'') + fmtTWD(realizedYtd);
@@ -2437,6 +2458,8 @@ function sortBy(key) {
 function renderTable() {
   const holdingsTotal = holdings.reduce((s,h)=>s+valueInTWD(h),0);
   const q = document.getElementById('search-box').value.toLowerCase();
+  const marketFilterEl = document.getElementById('market-filter');
+  const marketFilter = marketFilterEl ? marketFilterEl.value : '';
   let rows = holdings.map((h,i)=>{
     const value_twd = valueInTWD(h);
     const cost_twd = costInTWD(h);
@@ -2448,6 +2471,7 @@ function renderTable() {
   });
 
   if(q) rows = rows.filter(r=>(r.name||'').toLowerCase().includes(q) || r.ticker.toLowerCase().includes(q));
+  if(marketFilter) rows = rows.filter(r=>r.market===marketFilter);
 
   rows.sort((a,b)=>{
     let av=a[sortKey]||0, bv=b[sortKey]||0;
@@ -2821,108 +2845,6 @@ function effectiveRealizedNative(r) {
   return shares * (sellPrice - costPrice) - fees;
 }
 
-function buildAIPortfolioPayload() {
-  const asOf = new Date().toISOString().slice(0,10);
-  const holdingsTotal = holdingsValueTWD();
-  const cashTotal = totalCashTWD();
-  const total = totalValueTWD();
-  const twTotal = holdings.filter(h=>h.market==='TW'||h.market==='ETF-TW').reduce((s,h)=>s+valueInTWD(h),0);
-  const usTotal = holdings.filter(h=>h.market==='US'||h.market==='ETF-US').reduce((s,h)=>s+valueInTWD(h),0);
-  const unrealizedTotal = holdings.reduce((s,h)=>s+unrealizedTWD(h),0);
-  const realizedTotalTwd = realizedRecords.reduce((s,r)=>s + effectiveRealizedNative(r) * (parseFloat(r.fxRate) || (r.currency === 'USD' ? usdRate : 1)), 0);
-  const realizedYtdTwd = realizedRecords.filter(r => String(r.date||'').startsWith(String(new Date().getFullYear()))).reduce((s,r)=>s + effectiveRealizedNative(r) * (parseFloat(r.fxRate) || (r.currency === 'USD' ? usdRate : 1)), 0);
-  const investmentCostTwd = holdings.reduce((s,h)=>s+costInTWD(h),0);
-
-  return {
-    schemaVersion: '8.13-ai-1',
-    asOf,
-    generatedAt: new Date().toISOString(),
-    currencyBase: 'TWD',
-    fx: { USDTWD: usdRate },
-    summary: {
-      totalAssetsTwd: Math.round(total),
-      holdingsMarketValueTwd: Math.round(holdingsTotal),
-      cashTwd: Math.round(cashTotal),
-      twMarketValueTwd: Math.round(twTotal),
-      usMarketValueTwd: Math.round(usTotal),
-      investmentCostTwd: Math.round(investmentCostTwd),
-      unrealizedPnlTwd: Math.round(unrealizedTotal),
-      unrealizedReturnPct: investmentCostTwd>0 ? +(unrealizedTotal/investmentCostTwd*100).toFixed(2) : 0,
-      realizedPnlTotalTwd: Math.round(realizedTotalTwd),
-      realizedPnlYtdTwd: Math.round(realizedYtdTwd),
-      cashWeightPct: total>0 ? +(cashTotal/total*100).toFixed(2) : 0,
-      twWeightPct: total>0 ? +(twTotal/total*100).toFixed(2) : 0,
-      usWeightPct: total>0 ? +(usTotal/total*100).toFixed(2) : 0
-    },
-    allocationPolicy: {
-      excludeTsmcEtfTargetPct: allocationTargets.exEtf,
-      excludeTsmcStockTargetPct: allocationTargets.exStock,
-      excludeTsmcSingleStockMaxPct: allocationTargets.exSingleStockMax,
-      cashMinPct: allocationTargets.cashMinPct,
-      cashMaxPct: allocationTargets.cashMaxPct,
-      cashMinTwd: Math.round((allocationTargets.cashMinWan||0)*10000),
-      cashMaxTwd: Math.round((allocationTargets.cashMaxWan||0)*10000)
-    },
-    holdings: holdings.map(h => {
-      const currency = (h.market === 'US' || h.market === 'ETF-US') ? 'USD' : 'TWD';
-      const v = valueInTWD(h), c = costInTWD(h), u = unrealizedTWD(h);
-      return {
-        ticker: h.ticker,
-        name: h.name,
-        market: h.market,
-        assetType: String(h.market||'').startsWith('ETF-') ? 'ETF' : 'Stock',
-        currency,
-        quantity: +h.shares,
-        unitCostNative: +h.cost,
-        currentPriceNative: +h.price,
-        totalCostTwd: Math.round(c),
-        marketValueTwd: Math.round(v),
-        portfolioWeightPct: holdingsTotal>0 ? +(v/holdingsTotal*100).toFixed(2) : 0,
-        totalAssetWeightPct: total>0 ? +(v/total*100).toFixed(2) : 0,
-        unrealizedPnlTwd: Math.round(u),
-        unrealizedReturnPct: c>0 ? +(u/c*100).toFixed(2) : 0
-      };
-    }),
-    cashAccounts: cashAccounts.map(c => {
-      const currency = String(c.currency||'TWD').toUpperCase();
-      const twd = cashValueInTWD(c);
-      return {
-        name: c.name || '',
-        currency,
-        balanceNative: +(parseFloat(c.balance)||0),
-        valueTwd: Math.round(twd),
-        totalAssetWeightPct: total>0 ? +(twd/total*100).toFixed(2) : 0,
-        note: c.note || ''
-      };
-    }),
-    realizedRecords: realizedRecords.map(r => {
-      const currency = (r.currency || marketToCurrency(r.market)).toUpperCase();
-      const fx = parseFloat(r.fxRate) || (currency === 'USD' ? usdRate : 1);
-      const pnlNative = effectiveRealizedNative(r);
-      return {
-        date: r.date || '', ticker: r.ticker, name: r.name, market: r.market, currency,
-        quantity: +(r.shares||0), sellPriceNative: +(r.sellPrice||0), costPriceNative: +(r.costPrice||0),
-        feesNative: +(r.fees||0), fxRate: +fx, realizedPnlNative: +pnlNative.toFixed(2),
-        realizedPnlTwd: Math.round(pnlNative*fx), note: r.note || ''
-      };
-    }),
-    history: snapshots.map(s => ({
-      date: s.date, totalAssetsTwd: Math.round(+s.total||0), twTwd: Math.round(+s.tw||0),
-      usTwd: Math.round(+s.us||0), cashTwd: Math.round(+s.cash||0), usdTwd: +(s.usdRate||usdRate)
-    }))
-  };
-}
-
-function exportAIAssetJSON() {
-  const payload = buildAIPortfolioPayload();
-  const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json;charset=utf-8'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `portfolio_agent_${payload.asOf}.json`;
-  a.click();
-  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
-}
-
 function exportAIAssetCSV() {
   const todayKey = new Date().toISOString().slice(0,10);
   const holdingsTotal = holdingsValueTWD();
@@ -2930,7 +2852,9 @@ function exportAIAssetCSV() {
   const total = totalValueTWD();
   const twTotal = holdings.filter(h=>h.market==='TW'||h.market==='ETF-TW').reduce((s,h)=>s+valueInTWD(h),0);
   const usTotal = holdings.filter(h=>h.market==='US'||h.market==='ETF-US').reduce((s,h)=>s+valueInTWD(h),0);
-  const unrealizedTotal = holdings.reduce((s,h)=>s+unrealizedTWD(h),0);
+  const twUnrealizedTotal = holdings.filter(h=>h.market==='TW'||h.market==='ETF-TW').reduce((s,h)=>s+unrealizedTWD(h),0);
+  const usUnrealizedTotal = holdings.filter(h=>h.market==='US'||h.market==='ETF-US').reduce((s,h)=>s+unrealizedTWD(h),0);
+  const unrealizedTotal = twUnrealizedTotal + usUnrealizedTotal;
   const realizedTotalTwd = realizedRecords.reduce((s,r)=>s + effectiveRealizedNative(r) * (parseFloat(r.fxRate) || (r.currency === 'USD' ? usdRate : 1)), 0);
 
   const header = [
@@ -2950,6 +2874,8 @@ function exportAIAssetCSV() {
   pushSummary('美股及美國ETF', usTotal);
   pushSummary('現金銀行合計', cashTotal);
   rows.push(['SUMMARY', todayKey, '', '未實現損益合計', '', 'TWD', '', '', '', '', '', '', '', Math.round(unrealizedTotal), holdings.reduce((s,h)=>s+costInTWD(h),0)>0 ? (unrealizedTotal/holdings.reduce((s,h)=>s+costInTWD(h),0)*100).toFixed(2) : '', '', '', '', '', '', '', '', '', '', '', '']);
+  rows.push(['SUMMARY', todayKey, '', '台股未實現損益', '', 'TWD', '', '', '', '', '', '', '', Math.round(twUnrealizedTotal), '', '', '', '', '', '', '', '', '', '', '', '']);
+  rows.push(['SUMMARY', todayKey, '', '美股未實現損益', '', 'TWD', '', '', '', '', '', '', '', Math.round(usUnrealizedTotal), '', '', '', '', '', '', '', '', '', '', '', '']);
   rows.push(['SUMMARY', todayKey, '', '已實現損益合計', '', 'TWD', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', Math.round(realizedTotalTwd), '']);
 
   holdings.forEach(h => {
