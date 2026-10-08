@@ -638,7 +638,7 @@
 <header>
   <div>
     <h1>📊 投資組合追蹤器</h1>
-    <div style="font-size:13px;color:var(--muted);margin-top:4px;">V8.13.3</div>
+    <div style="font-size:13px;color:var(--muted);margin-top:4px;">V8.13.4</div>
   </div>
   <div class="meta">
     資料日期：<span id="today-date"></span><br>
@@ -1575,14 +1575,18 @@ function disconnectCloud() {
   setSyncStatus('目前：本機模式', 'warn');
 }
 
-function jsonpRequest(url, timeoutMs=15000) {
+// The backend may wait up to 30 seconds for a data lock before reading Sheets.
+// Allow time for that wait, Apps Script startup, and the response redirect.
+function jsonpRequest(url, timeoutMs=60000) {
   return new Promise((resolve, reject) => {
     const cb = 'portfolio_cb_' + Date.now() + '_' + Math.random().toString(36).slice(2);
     const script = document.createElement('script');
     const sep = url.includes('?') ? '&' : '?';
     let timer = setTimeout(() => {
       cleanup();
-      reject(new Error('連線逾時'));
+      const error = new Error('連線逾時（等待 ' + Math.ceil(timeoutMs / 1000) + ' 秒）');
+      error.code = 'CLOUD_TIMEOUT';
+      reject(error);
     }, timeoutMs);
     function cleanup() {
       clearTimeout(timer);
@@ -1590,7 +1594,12 @@ function jsonpRequest(url, timeoutMs=15000) {
       if(script.parentNode) script.parentNode.removeChild(script);
     }
     window[cb] = (data) => { cleanup(); resolve(data); };
-    script.onerror = () => { cleanup(); reject(new Error('無法載入雲端資料')) };
+    script.onerror = () => {
+      cleanup();
+      const error = new Error('無法載入雲端資料');
+      error.code = 'CLOUD_LOAD_FAILED';
+      reject(error);
+    };
     script.src = url + sep + 'callback=' + encodeURIComponent(cb) + '&_=' + Date.now();
     document.body.appendChild(script);
   });
@@ -1608,7 +1617,7 @@ async function loadCloudData(manual=false) {
   if(!requireCloudToken(manual)) return;
   try {
     isLoadingCloud = true;
-    setSyncStatus('正在從 Google Sheets 讀取...', 'warn');
+    setSyncStatus('正在從 Google Sheets 讀取，首次連線可能需要 30–60 秒...', 'warn');
     const data = await jsonpRequest(cloudUrlWithParams('get'));
     if(session !== cloudSessionSerial) return;
     if(!data || data.ok !== true) throw new Error(data?.error || '雲端回傳格式不正確');
@@ -1670,7 +1679,14 @@ async function loadCloudData(manual=false) {
     cloudReady = false;
     console.error(err);
     setSyncStatus('同步失敗：' + err.message, 'err');
-    if(manual) alert('無法從雲端讀取：' + err.message + '\n\n請確認 Web App URL 正確，且 Apps Script 已設定「任何知道連結的人」可存取。');
+    if(manual) {
+      const hint = err.code === 'CLOUD_TIMEOUT'
+        ? 'Google 尚未在等待時間內回傳結果。請稍後再按「從雲端下載」；若持續逾時，請查看 Apps Script 執行紀錄。'
+        : err.code === 'CLOUD_LOAD_FAILED'
+          ? '請確認網路與 Web App URL，並確認部署允許網頁存取。'
+          : '請依上方錯誤訊息檢查安全碼、後端版本或資料格式。';
+      alert('無法從雲端讀取：' + err.message + '\n\n' + hint + '\n\n讀取成功前，系統會停止上傳。');
+    }
   } finally {
     if(session === cloudSessionSerial) isLoadingCloud = false;
   }
@@ -1747,7 +1763,7 @@ async function saveCloudData(manual=false) {
       usdRate, allocationTargets, syncProtocol: SYNC_PROTOCOL, baseRevision: cloudRevision,
       requestId, clearSnapshots: clearSnapshotsPending, updatedAt: new Date().toISOString() }));
     setSyncStatus('正在驗證後端版本...', 'warn');
-    const auth = await jsonpRequest(cloudUrlWithParams('ping'), 8000);
+    const auth = await jsonpRequest(cloudUrlWithParams('ping'), 30000);
     if(session !== cloudSessionSerial || !cloudReady) return;
     if(!auth || auth.ok !== true) throw new Error(auth?.error || 'Token 驗證失敗');
     if(auth.syncProtocol !== SYNC_PROTOCOL) throw new Error('後端版本過舊，已阻止上傳。請更新此網址的部署至 V8.13.3。');
@@ -1756,7 +1772,7 @@ async function saveCloudData(manual=false) {
     let result = null;
     for(let attempt=0; attempt<12; attempt++) {
       if(session !== cloudSessionSerial) return;
-      result = await jsonpRequest(cloudUrlWithParams('savestatus', {requestId}), 10000);
+      result = await jsonpRequest(cloudUrlWithParams('savestatus', {requestId}), 30000);
       if(result && !result.pending) break;
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
@@ -2808,7 +2824,7 @@ async function fetchPricesFromCloud(tickers) {
   if(clean.length === 0) return {};
   try {
     const url = cloudUrlWithParams('prices', {tickers: clean.join(',')});
-    const data = await jsonpRequest(url, 25000);
+    const data = await jsonpRequest(url, 60000);
     if(data && data.ok === true && data.prices) return data.prices;
     console.warn('雲端價格回傳異常', data);
   } catch(err) {
